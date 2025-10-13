@@ -6,7 +6,7 @@ from typing import Union
 from langchain.schema import Document
 
 from app.db.vector_store import AsyncPgVector, ExtendedPgVector
-from app.models.document_models import DocumentCreate
+from app.models.document_model import DocumentCreate
 
 
 class DocumentService:

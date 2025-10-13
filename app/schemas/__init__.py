@@ -3,11 +3,12 @@ from .auth_request import *
 from .auth_response import *
 
 # OpenAI-compatible schemas
-from .chat_requests import *
-from .chat_responses import *
+from .chat_request import *
+from .chat_response import *
 from .embedding import *
 from .retrieval import *
 from .common import *
+from .project_request import ProjectRequest
 
 __all__ = [
     # Auth

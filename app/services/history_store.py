@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, List, Optional
 
-from app.schemas.chat_responses import ChatMessage as ResponseChatMessage
+from app.schemas.chat_response import ChatMessage as ResponseChatMessage
 
 
 class InMemoryHistoryStore:
@@ -37,4 +37,3 @@ class InMemoryHistoryStore:
     async def set_summary(self, conversation_id: str, summary: str) -> None:
         async with self._lock:
             self._summaries[conversation_id] = summary
-

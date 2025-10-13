@@ -1,6 +1,11 @@
 from typing import List, Dict, Any, Optional
 
-from app.schemas.chat_responses import ChatCompletionRequest, ChatCompletionResponse, ChatMessage as ResponseChatMessage, ChatRole
+from app.schemas.chat_response import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage as ResponseChatMessage,
+    ChatRole,
+)
 from app.services.history_store import InMemoryHistoryStore
 
 

@@ -20,9 +20,9 @@ class User(Base):
     refresh_token = Column(String, nullable=True)
     refresh_token_expires_at = Column(Integer, nullable=True)
     created_at = Column(String, nullable=True)  # Store as string for now
-    # company_id = Column(Integer, ForeignKey('companies.id'), nullable=True)  # Commented out for now
+    company_id = Column(UUID(as_uuid=True), ForeignKey('companies.id', ondelete="SET NULL"), nullable=True)
 
-    # company = relationship("Company", back_populates="users")  # Commented out for now
+    company = relationship("Company", back_populates="users")
     auth_sessions = relationship("AuthSession", back_populates="user")
     
     def verify_password(self, password: str) -> bool:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 
-from app.schemas.chat_responses import ChatMessage as ResponseChatMessage, ChatRole
+from app.schemas.chat_response import ChatMessage as ResponseChatMessage, ChatRole
 from app.services.history_store import InMemoryHistoryStore
 from app.services.retrieval_service import QdrantRetriever
 from app.utils.tokenizer import Tokenizer
@@ -89,7 +89,7 @@ class ContextEngine:
             if summary:
                 stack.append(SystemMessage(content=f"Conversation summary (for context only):\n{summary}"))
 
-        # Retrieval context from Qdrant
+        # Retrieval context from Qdrant with optional project filtering
         if p.include_retrieval and self.retriever is not None:
             latest_user = None
             for m in reversed(provided):
@@ -98,7 +98,18 @@ class ContextEngine:
                     latest_user = m.content
                     break
             if latest_user:
-                docs = await self.retriever.asearch(latest_user, k=self.retrieval_top_k)
+                # Extract project_id from metadata if available (for filtering)
+                retrieval_filters = {}
+                if session_constraints and "project_id" in str(session_constraints):
+                    # You can pass project_id via session_constraints metadata
+                    # Example: session_constraints = "project_id:uuid-123"
+                    pass
+
+                docs = await self.retriever.asearch(
+                    latest_user,
+                    k=self.retrieval_top_k,
+                    filters=retrieval_filters if retrieval_filters else None
+                )
                 if docs:
                     joined = "\n\n".join(docs)
                     stack.append(SystemMessage(content=f"Relevant context (retrieved):\n---\n{joined}\n---\nUse only if relevant. If uncertain, say you are unsure."))

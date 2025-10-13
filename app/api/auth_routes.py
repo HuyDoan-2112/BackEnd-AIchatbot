@@ -11,7 +11,7 @@ auth_service = AuthService()
 
 
 @router.post(
-    "/signup",
+    "/signup", # endpoint
     status_code=201,
     summary="Register a new user",
     description="""
@@ -103,7 +103,7 @@ async def signup(request: SignUpRequest):
     "/login",
     summary="Login user",
     description="""
-    Authenticate a user with email and password.
+    Authenticate a user with username and password.
 
     **Returns:**
     - Access token (valid for 30 minutes) - Use this for API requests
@@ -111,7 +111,7 @@ async def signup(request: SignUpRequest):
     - User information
 
     **Usage:**
-    1. Send email and password
+    1. Send username and password
     2. Store both tokens securely
     3. Use access token in Authorization header: `Bearer <access_token>`
     4. When access token expires, use refresh token to get a new one
@@ -170,7 +170,7 @@ async def login(request: LoginRequest):
     Authenticates user and returns access/refresh tokens.
     """
     try:
-        result = await auth_service.login(request.email, request.password)
+        result = await auth_service.login(request.username, request.password)
 
         # Handle error responses from service
         if isinstance(result, ResponseStatus):

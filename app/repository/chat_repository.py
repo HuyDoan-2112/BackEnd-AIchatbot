@@ -1,6 +1,6 @@
 from app.db.postgresql import get_db_connection
 from app.core.response_status import *
-from app.models.chat_models import Chat
+from app.models.chat_model import Chat
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update

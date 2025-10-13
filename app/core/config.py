@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = "organization_owner"
     EMBEDDING_OWNED_BY: str = "organization_owner"
 
+    # Redis Cache settings
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_CACHE_TTL: int = 3600  # 1 hour default
+    ENABLE_RESPONSE_CACHE: bool = True  # Toggle response caching
+
+    # Streaming settings
+    STREAM_SHOW_THINKING: bool = True  # Show "thinking" status messages during streaming
+
     @property
     def database_url(self) -> str:
         return (

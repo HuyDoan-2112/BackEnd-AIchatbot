@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - optional
 
 class QdrantRetriever:
     """
-    Minimal Qdrant retriever for RAG-style context.
+    Enhanced Qdrant retriever with project-based filtering support.
     Uses OpenAI embeddings via langchain-openai.
     If dependencies or config are missing, returns an empty result gracefully.
     """
@@ -66,7 +66,24 @@ class QdrantRetriever:
             except Exception:
                 self._embedder = None
 
-    async def asearch(self, query: str, k: Optional[int] = None) -> List[str]:
+    async def asearch(
+        self,
+        query: str,
+        k: Optional[int] = None,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """
+        Search with optional metadata filtering.
+
+        Args:
+            query: Search query text
+            k: Number of results to return
+            filters: Optional metadata filters
+                Example: {"project_id": "uuid-123", "user_id": "uuid-456"}
+
+        Returns:
+            List of document text chunks
+        """
         limit = k or self._top_k
         if not query or not self.collection_name or self._qdrant is None or self._embedder is None:
             return []
@@ -78,10 +95,28 @@ class QdrantRetriever:
             return []
 
         try:
+            # Build Qdrant filter if provided
+            qdrant_filter = None
+            if filters:
+                try:
+                    from qdrant_client.models import Filter, FieldCondition, MatchValue
+                    conditions = []
+                    for key, value in filters.items():
+                        conditions.append(
+                            FieldCondition(
+                                key=key,
+                                match=MatchValue(value=str(value))
+                            )
+                        )
+                    qdrant_filter = Filter(must=conditions)
+                except Exception:
+                    pass  # If filter creation fails, search without filters
+
             results = await asyncio.to_thread(
                 self._qdrant.search,
                 collection_name=self.collection_name,
                 query_vector=vector,
+                query_filter=qdrant_filter,
                 limit=limit,
             )
         except Exception:

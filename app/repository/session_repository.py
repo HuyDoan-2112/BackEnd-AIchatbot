@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.postgresql import get_db_connection
 from app.core.response_status import *
-from app.models.auth_models import AuthSession
+from app.models.auth_model import AuthSession
 
 class SessionRepository:
     

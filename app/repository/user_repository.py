@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.db.postgresql import get_db_connection
-from app.models.user_models import User
+from app.models.user_model import User
 from app.core.response_status import *
 
 class UserRepository:
@@ -182,4 +182,3 @@ class UserRepository:
                 return False
         except Exception as e:
             return InternalError(message=f"Failed to invalidate token: {str(e)}", error_code="5000")
-

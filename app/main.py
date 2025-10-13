@@ -11,6 +11,7 @@ from app.api import routes
 from app.core.config import get_settings
 from app.db import postgresql
 from app.core import model_registry as model_registry_module
+from app.services.cache_service import get_cache_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,12 +27,16 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     settings = get_settings()
-    
+
+    # Initialize Redis cache
+    cache_service = get_cache_service()
+    await cache_service.connect()
+    print(f"✓ Cache service initialized (enabled: {settings.ENABLE_RESPONSE_CACHE})")
+
     # Initialize model registry
     model_registry_module.model_registry = model_registry_module.ModelRegistry(settings)
     await model_registry_module.model_registry.initialize()
     print(f"✓ Model registry initialized with model: {settings.MODEL_NAME}")
-
 
     postgresql.db_connection = postgresql.PostgreSQLConnection(settings.database_url)
     await postgresql.db_connection.connect()
@@ -60,6 +65,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await cache_service.disconnect()
+    print("✓ Cache service disconnected")
     await model_registry_module.model_registry.shutdown()
     await postgresql.db_connection.close()
     print("✓ Database connection closed")
@@ -113,7 +120,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Configure CORS for frontend integration
+# Configure CORS for frontend integration (including streaming support)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -125,6 +132,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "Content-Type",
+        "Cache-Control",
+        "X-Request-ID"
+    ],  # Expose headers needed for streaming
 )
 
 # Include routers

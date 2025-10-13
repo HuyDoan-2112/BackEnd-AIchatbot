@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import List, Optional
+from functools import lru_cache
+import hashlib
 
 try:
     import tiktoken  # type: ignore
@@ -29,15 +31,30 @@ class Tokenizer:
                 except Exception:
                     self._enc = None
 
-    def count_text(self, text: str) -> int:
-        if not text:
-            return 0
+    @lru_cache(maxsize=2048)
+    def _cached_count_text(self, text_hash: str, text: str) -> int:
+        """Cached token counting for frequently used texts."""
         if self._enc is not None:
             try:
                 return len(self._enc.encode(text))
             except Exception:
                 pass
         # Heuristic: ~4 chars per token
+        return max(1, len(text) // 4)
+
+    def count_text(self, text: str) -> int:
+        if not text:
+            return 0
+        # Create hash for cache key (only for texts > 50 chars to avoid overhead)
+        if len(text) > 50:
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+            return self._cached_count_text(text_hash, text)
+        # For short texts, don't cache
+        if self._enc is not None:
+            try:
+                return len(self._enc.encode(text))
+            except Exception:
+                pass
         return max(1, len(text) // 4)
 
     def count_messages(self, messages: List[BaseMessage]) -> int:

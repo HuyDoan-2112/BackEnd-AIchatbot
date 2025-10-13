@@ -1,0 +1,10 @@
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNmExY2ZjNy0zYTNlLTQ2ZTMtYjVjNS05NGY4MWVkNDYwYTkiLCJleHAiOjE3NjA5NzEzMTh9.n24Zu6qO-fjukDEe-z7xHLxQZRHb_CfjNc9qab3ZVPc
+
+###
+GET http://localhost:8000/api/v1/projects/
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+
+}
