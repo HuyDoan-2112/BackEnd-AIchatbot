@@ -1,7 +1,9 @@
+@token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlYzEwNzhlYy05NDJmLTRiMGUtOGQ5Zi04MGQ2ZTU0ZDM5ZjMiLCJleHAiOjE3NjA1MDkyNDh9.AGeg0dBFuWZULzYK3J9T-qKZ_ofRaLoUYfDwClr6p-4
+
 ###
 POST http://localhost:8000/api/v1/chat/completions
 Content-Type: application/json
- 
+Authorization: Bearer {{token}}
 
 {
   "model": "openai/gpt-oss-20b",
@@ -16,3 +18,18 @@ Content-Type: application/json
   "n": 1,
   "stream": false
 }
+
+###
+# List my conversations (requires Auth)
+GET http://localhost:8000/api/v1/chat/conversations?limit=20
+Authorization: Bearer {{token}}
+
+###
+# Get single conversation (replace with a valid conversation_id)
+GET http://localhost:8000/api/v1/chat/conversations/{{conversation_id}}
+Authorization: Bearer {{token}}
+
+###
+# List messages in a conversation (replace with a valid conversation_id)
+GET http://localhost:8000/api/v1/chat/conversations/{{conversation_id}}/messages?limit=50&include_usage=true
+Authorization: Bearer {{token}}

@@ -122,8 +122,6 @@ class ChatCompletionChunkDelta(BaseModel):
     """Delta in streaming chunk"""
     role: Optional[ChatRole] = None
     content: Optional[str] = None
-    thinking: Optional[str] = None  # For thinking/reasoning status messages
-    reasoning: Optional[str] = None  # Alias for thinking (OpenAI o1 compatibility)
     function_call: Optional[Dict[str, Any]] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
 

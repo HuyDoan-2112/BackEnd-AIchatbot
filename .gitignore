@@ -5,3 +5,8 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+logs/
+/temps/
+
+.claude/
+.vscode/

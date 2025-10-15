@@ -6,11 +6,15 @@ from sqlalchemy.future import select
 from app.db.postgresql import get_db_connection
 from app.models.user_model import User
 from app.core.response_status import *
+from app.core.logger import get_logger
+
+logger = get_logger("user_repository")
 
 class UserRepository:
-    
+
     def __init__(self):
         self.db_connection = None
+        logger.debug("UserRepository initialized")
     
     def _get_db_connection(self):
         """Get database connection instance"""
@@ -20,39 +24,43 @@ class UserRepository:
 
     async def create_user(self, username: str, email: str, hashed_password: str, refresh_token: str, refresh_token_expires_at: datetime) -> Dict[str, Any]:
         """Create a new user in the database"""
+        logger.debug(f"Attempting to create user: {username} ({email})")
         try:
             async for session in self._get_db_connection().get_session():
 
                 # Check if username or email already exists
+                logger.debug(f"Checking if user already exists: {username} or {email}")
                 result = await session.execute(select(User).filter((User.username == username) | (User.email == email)))
                 existing_user = result.scalar_one_or_none()
                 if existing_user:
+                    logger.warning(f"User creation failed: Username or email already exists ({username}/{email})")
                     return BadRequest(message="Username or email already exists", error_code="4009")
                 
                 # Create new user with all fields
-                from datetime import datetime as dt
+                logger.debug(f"Creating new user record: {username}")
                 new_user = User(
-                    username=username, 
-                    email=email, 
+                    username=username,
+                    email=email,
                     hashed_password=hashed_password,
                     refresh_token=refresh_token,
                     refresh_token_expires_at=refresh_token_expires_at,
-                    created_at=dt.utcnow().isoformat(),
                     is_active=True
                 )
                 session.add(new_user)
                 await session.commit()
                 await session.refresh(new_user)
 
+                logger.info(f"User created successfully: {username} (ID: {new_user.id})")
                 return (
                     OK(message="User created successfully", data={
-                        "id": new_user.id,
+                        "id": str(new_user.id),  # Convert UUID to string
                         "username": new_user.username,
                         "email": new_user.email,
-                        "created_at": new_user.created_at,
+                        "created_at": new_user.created_at.isoformat() if new_user.created_at else None,
                     })
                 )
         except Exception as e:
+            logger.error(f"Failed to create user {username}: {str(e)}", exc_info=True)
             return InternalError(message=f"Failed to create user: {str(e)}", error_code="5000")
     
     async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
@@ -65,25 +73,32 @@ class UserRepository:
                     "username": user.username,
                     "email": user.email,
                     "hashed_password": user.hashed_password,
-                    "created_at": user.created_at,
+                    "created_at": user.created_at.isoformat() if user.created_at else None,
                 } if user else UserNotFound(message="User not found", error_code="4004")
         except Exception as e:
             return InternalError(message=f"Failed to get user by username: {str(e)}", error_code="5000")
 
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        logger.debug(f"Looking up user by email: {email}")
         try:
             async for session in self._get_db_connection().get_session():
                 result = await session.execute(select(User).filter(User.email == email))
                 user = result.scalar_one_or_none()
-                return {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "hashed_password": user.hashed_password,
-                    "created_at": user.created_at,
-                } if user else UserNotFound(message="User not found", error_code="4004")
+                if user:
+                    logger.debug(f"User found: {user.username} ({email})")
+                    return {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "hashed_password": user.hashed_password,
+                        "created_at": user.created_at.isoformat() if user.created_at else None,
+                    }
+                else:
+                    logger.debug(f"User not found: {email}")
+                    return UserNotFound(message="User not found", error_code="4004")
         except Exception as e:
+            logger.error(f"Failed to get user by email {email}: {str(e)}", exc_info=True)
             return InternalError(message=f"Failed to get user by email: {str(e)}", error_code="5000")
 
     async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -95,7 +110,7 @@ class UserRepository:
                     "id": user.id,
                     "username": user.username,
                     "email": user.email,
-                    "created_at": user.created_at,
+                    "created_at": user.created_at.isoformat() if user.created_at else None,
                 } if user else UserNotFound(message="User not found", error_code="4004")
         except Exception as e:
             return InternalError(message=f"Failed to get user by id: {str(e)}", error_code="5000")
@@ -163,7 +178,7 @@ class UserRepository:
                         "id": user.id,
                         "username": user.username,
                         "email": user.email,
-                        "created_at": user.created_at,
+                        "created_at": user.created_at.isoformat() if user.created_at else None,
                     }).send()
                 return NotFound(message="Invalid or expired refresh token", error_code="4004")
         except Exception as e:

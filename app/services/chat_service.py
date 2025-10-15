@@ -1,5 +1,5 @@
 from typing import AsyncGenerator, Optional, Dict, Any, List
-from uuid import uuid4
+from uuid import uuid4, UUID
 import logging
 import time
 
@@ -25,6 +25,9 @@ from app.services.retrieval_service import build_default_retriever
 from app.services.cache_service import get_cache_service
 from app.repository.llm_repository import llm_repository as default_llm_repo
 from app.utils.tokenizer import Tokenizer
+from app.repository.chat_repository import ChatRepository
+from app.core.response_status import ResponseStatus
+from app.models.message_model import Message
 
 logger = logging.getLogger(__name__)
 class ChatService:
@@ -36,6 +39,7 @@ class ChatService:
         self.history_store = getattr(self.llm_repository, "history_store", InMemoryHistoryStore())
         self.tokenizer = Tokenizer(self.settings.MODEL_NAME)
         self.cache_service = get_cache_service()
+        self.chat_repository = ChatRepository()
         self.context_engine = ContextEngine(
             history=self.history_store,
             retriever=build_default_retriever(),
@@ -63,17 +67,6 @@ class ChatService:
             api_key=self.settings.OPENAI_API_KEY or "lm-studio",  # LM Studio doesn't validate API key
             http_client=http_client
         )
-        
-    def _resolve_conversation_id(self, request: ChatCompletionRequest) -> str:
-        metadata = request.metadata or {}
-        conversation_id = None
-        if isinstance(metadata, dict):
-            conversation_id = metadata.get("conversation_id") or metadata.get("session_id")
-        if conversation_id:
-            return str(conversation_id)
-        if request.user:
-            return request.user
-        return f"default:{request.model}"
 
     def _convert_messages_to_openai_format(self, messages) -> List[Dict[str, Any]]:
         """Convert internal message format or LangChain BaseMessage to OpenAI API format."""
@@ -129,6 +122,139 @@ class ChatService:
             openai_messages.append(message_dict)
         return openai_messages
 
+    async def _get_or_create_conversation(self, request: ChatCompletionRequest) -> str:
+        """
+        Ensure a conversation exists for the request, creating one if necessary.
+        """
+        metadata = dict(request.metadata or {})
+        candidate_id = metadata.get("conversation_id") or metadata.get("session_id")
+        conversation_id: Optional[str] = None
+
+        if candidate_id:
+            try:
+                conversation_uuid = str(UUID(str(candidate_id)))
+                existing = await self.chat_repository.get_chat_by_id(conversation_uuid)
+                if isinstance(existing, ResponseStatus):
+                    if existing.success:
+                        # Unexpected, but fall back to returned payload if available
+                        data = getattr(existing, "data", None) or {}
+                        conversation_id = data.get("conversation_id")
+                    else:
+                        conversation_id = None
+                else:
+                    conversation_id = conversation_uuid
+            except ValueError:
+                logger.debug("Invalid conversation_id provided; generating a new one.")
+
+        if not conversation_id:
+            company_id = metadata.get("company_id")
+            project_id = metadata.get("project_id")
+
+            # Allow anonymous users to chat without company_id/project_id
+            if not company_id or not project_id:
+                logger.info("No company_id/project_id provided - using temporary conversation (anonymous mode)")
+                conversation_id = uuid4().hex
+            else:
+                # Authenticated user with company/project - save chat history
+                title = metadata.get("conversation_title") or metadata.get("title")
+                preset_id = metadata.get("preset_id")
+
+                creation = await self.chat_repository.create_chat(
+                    company_id=company_id,
+                    project_id=project_id,
+                    title=title,
+                    created_by=request.user,
+                    model=request.model,
+                    preset_id=preset_id,
+                )
+
+                if isinstance(creation, ResponseStatus):
+                    if not creation.success:
+                        raise ValueError(creation.message)
+                    payload = creation.data or {}
+                    conversation_id = payload.get("conversation_id")
+                else:
+                    conversation_id = str(creation.conversation_id)
+
+        if not conversation_id:
+            raise ValueError("Failed to resolve conversation identifier.")
+
+        # Ensure metadata carries the resolved conversation ID for the rest of this request.
+        metadata["conversation_id"] = conversation_id
+        request.metadata = metadata
+        return conversation_id
+
+    async def _register_participant(self, conversation_id: str, user_id: Optional[str]) -> None:
+        if not user_id:
+            return
+        try:
+            result = await self.chat_repository.add_participant(conversation_id, user_id)
+            if isinstance(result, ResponseStatus) and not result.success:
+                logger.debug(f"Failed to register participant: {result.message}")
+        except Exception as exc:
+            logger.debug(f"Participant registration failed: {exc}")
+
+    async def _persist_exchange(
+        self,
+        *,
+        conversation_id: str,
+        request: ChatCompletionRequest,
+        user_message: Optional[ResponseChatMessage],
+        assistant_message: ResponseChatMessage,
+        usage: Usage,
+    ) -> None:
+        try:
+            await self._register_participant(conversation_id, request.user)
+
+            user_record = None
+            if user_message and user_message.content:
+                created = await self.chat_repository.create_message(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=user_message.content,
+                    author_user_id=request.user,
+                    model_label=request.model,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                )
+                if isinstance(created, Message):
+                    user_record = created
+                elif isinstance(created, ResponseStatus) and not created.success:
+                    logger.debug(f"Failed to persist user message: {created.message}")
+
+            assistant_record = await self.chat_repository.create_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=assistant_message.content or "",
+                author_user_id=None,
+                parent_message_id=str(user_record.id) if user_record else None,
+                model_label=request.model,
+                temperature=request.temperature,
+                top_p=request.top_p,
+            )
+
+            assistant_message_id: Optional[str] = None
+            if isinstance(assistant_record, Message):
+                assistant_message_id = str(assistant_record.id)
+            elif isinstance(assistant_record, ResponseStatus):
+                if assistant_record.success and assistant_record.data:
+                    assistant_message_id = assistant_record.data.get("message_id")
+                else:
+                    logger.debug(f"Failed to persist assistant message: {assistant_record.message}")
+
+            if assistant_message_id:
+                usage_result = await self.chat_repository.save_message_usage(
+                    assistant_message_id,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    latency_ms=None,
+                    cost_usd=None,
+                )
+                if isinstance(usage_result, ResponseStatus) and not usage_result.success:
+                    logger.debug(f"Failed to persist usage: {usage_result.message}")
+        except Exception as exc:
+            logger.debug(f"Message persistence failed: {exc}")
+
     async def create_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """Create a non-streaming chat completion using LM Studio."""
         start_time = time.time()
@@ -175,8 +301,8 @@ class ChatService:
         if not chat_model_config:
             raise ValueError(f"Model '{request.model}' not found in registry")
 
-        # Determine conversation key
-        conversation_id = self._resolve_conversation_id(request)
+        # Determine conversation key (persisted conversation model)
+        conversation_id = await self._get_or_create_conversation(request)
 
         # Build structured context with history and retrieval
         base_system_prompt = "You are a helpful assistant."
@@ -232,6 +358,22 @@ class ChatService:
             logger.exception(f"[{request_id}] Error calling LM Studio API")
             raise ValueError(f"LM Studio API error: {str(e)}")
 
+        # Compute usage
+        if hasattr(response, 'usage') and response.usage:
+            usage = Usage(
+                prompt_tokens=response.usage.prompt_tokens,
+                completion_tokens=response.usage.completion_tokens,
+                total_tokens=response.usage.total_tokens
+            )
+        else:
+            prompt_tokens = self.tokenizer.count_messages(final_messages)
+            completion_tokens = self.tokenizer.count_text(assistant_content)
+            usage = Usage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens
+            )
+
         # Persist messages and update summary
         history_start = time.time()
         try:
@@ -248,29 +390,20 @@ class ChatService:
             to_save.append(assistant_msg)
             await self.history_store.append(conversation_id, to_save)
 
+            await self._persist_exchange(
+                conversation_id=conversation_id,
+                request=request,
+                user_message=last_user,
+                assistant_message=assistant_msg,
+                usage=usage,
+            )
+
             # Update rolling summary asynchronously (do not block response)
             # Note: We can't pass LangChain model here anymore, need to refactor summary if needed
             # asyncio.create_task(self.context_engine.update_summary(chat_model, conversation_id=conversation_id))
         except Exception as ex:
             logger.debug(f"History persistence failed: {ex}")
         timings["history_save"] = time.time() - history_start
-
-        # Get actual usage from LM Studio response or estimate
-        if hasattr(response, 'usage') and response.usage:
-            usage = Usage(
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens
-            )
-        else:
-            # Fallback to estimation
-            prompt_tokens = self.tokenizer.count_messages(final_messages)
-            completion_tokens = self.tokenizer.count_text(assistant_content)
-            usage = Usage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens
-            )
 
         # Build OpenAI-compatible response
         chat_response = ChatCompletionResponse(
@@ -323,7 +456,7 @@ class ChatService:
                     index=0,
                     delta=ChatCompletionChunkDelta(
                         role=ChatRole.ASSISTANT,
-                        thinking=status_message  # Use thinking field instead of content
+                        content=f"_[{status_message}]_\n"  # Markdown italic for status
                     ),
                     finish_reason=None
                 )
@@ -350,7 +483,7 @@ class ChatService:
             raise
 
         # Build context for streaming with progress updates
-        conversation_id = self._resolve_conversation_id(request)
+        conversation_id = await self._get_or_create_conversation(request)
         base_system_prompt = "You are a helpful assistant."
         provided_messages = list(request.messages)
         if provided_messages and provided_messages[0].role == ChatRole.SYSTEM:
@@ -434,7 +567,7 @@ class ChatService:
 
                     yield response_chunk
 
-            # After streaming completes, persist to history
+            # After streaming completes, persist to history and repository
             try:
                 last_user = None
                 for m in reversed(provided_messages):
@@ -448,6 +581,19 @@ class ChatService:
                     to_save.append(last_user)
                 to_save.append(assistant_msg)
                 await self.history_store.append(conversation_id, to_save)
+
+                usage = Usage(
+                    prompt_tokens=self.tokenizer.count_messages(final_messages),
+                    completion_tokens=self.tokenizer.count_text(full_content),
+                    total_tokens=self.tokenizer.count_messages(final_messages) + self.tokenizer.count_text(full_content),
+                )
+                await self._persist_exchange(
+                    conversation_id=conversation_id,
+                    request=request,
+                    user_message=last_user,
+                    assistant_message=assistant_msg,
+                    usage=usage,
+                )
 
             except Exception as ex:
                 logger.debug(f"History persistence failed during streaming: {ex}")
@@ -468,14 +614,84 @@ class ChatService:
             logger.warning(f"Token count failed for model {model}: {str(e)}")
             return len(text.split())
 
-    async def create_new_conversation(self, user: Optional[str] = None) -> str:
-        """
-        Creates a new conversation ID.
-        If user is provided, the conversation ID is prefixed with the user ID.
-        """
-        if user:
-            return f"{user}:{uuid4()}"
-        return str(uuid4())
-    
+    async def get_chat_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve chat conversation details by ID."""
+        result = await self.chat_repository.get_chat_by_id(conversation_id)
+        if isinstance(result, ResponseStatus):
+            if result.success:
+                return result.data
+            else:
+                return None
+        elif isinstance(result, dict):
+            return result
+        return None
+
+    async def list_user_conversations(
+        self,
+        user_id: str,
+        *,
+        project_id: Optional[str] = None,
+        company_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> ResponseStatus:
+        try:
+            result = await self.chat_repository.list_chats_for_user(
+                user_id,
+                project_id=project_id,
+                company_id=company_id,
+                limit=limit,
+            )
+            if isinstance(result, ResponseStatus):
+                return result
+            return ResponseStatus(message="OK", data=result)
+        except Exception as e:
+            return ResponseStatus(message=f"Failed to list conversations: {e}", status_code=500)
+
+    async def get_conversation_details(
+        self, conversation_id: str, user_id: Optional[str] = None
+    ) -> ResponseStatus:
+        try:
+            if user_id:
+                has_access = await self.chat_repository.user_has_access(conversation_id, user_id)
+                if not has_access:
+                    return ResponseStatus(message="Forbidden", status_code=403)
+
+            result = await self.chat_repository.get_chat_by_id(conversation_id)
+            if isinstance(result, ResponseStatus):
+                return result
+            if result is None:
+                return ResponseStatus(message="Not Found", status_code=404)
+            return ResponseStatus(message="OK", data=result)
+        except Exception as e:
+            return ResponseStatus(message=f"Failed to get conversation: {e}", status_code=500)
+
+    async def get_conversation_messages(
+        self,
+        conversation_id: str,
+        *,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+        include_children: bool = False,
+        include_artifacts: bool = False,
+        include_usage: bool = False,
+    ) -> ResponseStatus:
+        try:
+            if user_id:
+                has_access = await self.chat_repository.user_has_access(conversation_id, user_id)
+                if not has_access:
+                    return ResponseStatus(message="Forbidden", status_code=403)
+
+            result = await self.chat_repository.list_messages(
+                conversation_id,
+                limit=limit,
+                include_children=include_children,
+                include_artifacts=include_artifacts,
+                include_usage=include_usage,
+            )
+            if isinstance(result, ResponseStatus):
+                return result
+            return ResponseStatus(message="OK", data=result)
+        except Exception as e:
+            return ResponseStatus(message=f"Failed to list messages: {e}", status_code=500)
 
 chat_service = ChatService()

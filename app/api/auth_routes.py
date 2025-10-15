@@ -170,7 +170,7 @@ async def login(request: LoginRequest):
     Authenticates user and returns access/refresh tokens.
     """
     try:
-        result = await auth_service.login(request.username, request.password)
+        result = await auth_service.login(request.email, request.password)
 
         # Handle error responses from service
         if isinstance(result, ResponseStatus):

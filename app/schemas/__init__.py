@@ -8,7 +8,7 @@ from .chat_response import *
 from .embedding import *
 from .retrieval import *
 from .common import *
-from .project_request import ProjectRequest
+from .project_request import ProjectRequest, ProjectUpdateRequest
 
 __all__ = [
     # Auth
@@ -61,4 +61,8 @@ __all__ = [
     "ModelListResponse",
     "DeleteResponse",
     "HealthCheckResponse",
+    
+    # Projects
+    "ProjectRequest",
+    "ProjectUpdateRequest",
 ]

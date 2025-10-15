@@ -3,6 +3,7 @@ from sqlalchemy import select, update, delete, and_, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.models.document_model import Document
+from app.models.project_document import ProjectDocument
 
 
 class DocumentRepository:
@@ -70,6 +71,17 @@ class DocumentRepository:
         """
         result = await self.db.execute(
             select(Document).where(Document.company_id == company_id)
+        )
+        return result.scalars().all()
+
+    async def list_documents_by_project(self, project_id: str) -> List[Document]:
+        """
+        Return all documents linked to a specific project.
+        """
+        result = await self.db.execute(
+            select(Document)
+            .join(ProjectDocument, ProjectDocument.document_id == Document.id)
+            .where(ProjectDocument.project_id == project_id)
         )
         return result.scalars().all()
 

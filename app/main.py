@@ -12,6 +12,11 @@ from app.core.config import get_settings
 from app.db import postgresql
 from app.core import model_registry as model_registry_module
 from app.services.cache_service import get_cache_service
+from app.middleware import LoggingMiddleware
+from app.core.logger import get_logger
+
+# Initialize logger
+logger = get_logger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,20 +31,37 @@ async def lifespan(app: FastAPI):
     - Store in app.state for dependency injection
     """
     # Startup
+    logger.info("Application startup initiated")
     settings = get_settings()
 
     # Initialize Redis cache
-    cache_service = get_cache_service()
-    await cache_service.connect()
-    print(f"✓ Cache service initialized (enabled: {settings.ENABLE_RESPONSE_CACHE})")
+    try:
+        cache_service = get_cache_service()
+        await cache_service.connect()
+        logger.info(f"Cache service initialized (enabled: {settings.ENABLE_RESPONSE_CACHE})")
+        print(f"✓ Cache service initialized (enabled: {settings.ENABLE_RESPONSE_CACHE})")
+    except Exception as e:
+        logger.error(f"Failed to initialize cache service: {e}", exc_info=True)
+        raise
 
     # Initialize model registry
-    model_registry_module.model_registry = model_registry_module.ModelRegistry(settings)
-    await model_registry_module.model_registry.initialize()
-    print(f"✓ Model registry initialized with model: {settings.MODEL_NAME}")
+    try:
+        model_registry_module.model_registry = model_registry_module.ModelRegistry(settings)
+        await model_registry_module.model_registry.initialize()
+        logger.info(f"Model registry initialized with model: {settings.MODEL_NAME}")
+        print(f"✓ Model registry initialized with model: {settings.MODEL_NAME}")
+    except Exception as e:
+        logger.error(f"Failed to initialize model registry: {e}", exc_info=True)
+        raise
 
-    postgresql.db_connection = postgresql.PostgreSQLConnection(settings.database_url)
-    await postgresql.db_connection.connect()
+    # Initialize database connection
+    try:
+        postgresql.db_connection = postgresql.PostgreSQLConnection(settings.database_url)
+        await postgresql.db_connection.connect()
+        logger.info("Database connection established")
+    except Exception as e:
+        logger.error(f"Failed to connect to database: {e}", exc_info=True)
+        raise
 
     # Initialize embeddings
     # embeddings = OpenAIEmbeddings()
@@ -62,14 +84,33 @@ async def lifespan(app: FastAPI):
     # app.state.rag_service = rag_service
     # app.state.db_connection = postgresql.db_connection
 
+    logger.info("Application startup completed")
+
     yield
 
     # Shutdown
-    await cache_service.disconnect()
-    print("✓ Cache service disconnected")
-    await model_registry_module.model_registry.shutdown()
-    await postgresql.db_connection.close()
-    print("✓ Database connection closed")
+    logger.info("Application shutdown initiated")
+    try:
+        await cache_service.disconnect()
+        logger.info("Cache service disconnected")
+        print("✓ Cache service disconnected")
+    except Exception as e:
+        logger.error(f"Error disconnecting cache service: {e}", exc_info=True)
+
+    try:
+        await model_registry_module.model_registry.shutdown()
+        logger.info("Model registry shut down")
+    except Exception as e:
+        logger.error(f"Error shutting down model registry: {e}", exc_info=True)
+
+    try:
+        await postgresql.db_connection.close()
+        logger.info("Database connection closed")
+        print("✓ Database connection closed")
+    except Exception as e:
+        logger.error(f"Error closing database connection: {e}", exc_info=True)
+
+    logger.info("Application shutdown completed")
 
 
 # Create FastAPI application with enhanced Swagger documentation
@@ -119,6 +160,9 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+# Add logging middleware (should be first to log all requests)
+app.add_middleware(LoggingMiddleware)
 
 # Configure CORS for frontend integration (including streaming support)
 app.add_middleware(

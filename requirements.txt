@@ -11,8 +11,8 @@ sqlalchemy
 asyncpg
 psycopg2-binary
 httpx[http2]>=0.24.0
-passlib==1.7.4
-bcrypt==4.2.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-jose[cryptography]
 python-multipart
 PyJWT>=2.8.0

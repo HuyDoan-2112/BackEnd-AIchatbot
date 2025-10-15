@@ -1,7 +1,12 @@
 """
 Service layer for document operations.
 """
-from typing import Union
+from typing import Union, Optional, List
+
+from app.core.response_status import ResponseStatus, OK, InternalError, NotFound
+from app.db.postgresql import get_db_connection
+from app.repository.document_repository import DocumentRepository
+from app.repository.link_repository import LinkRepository
 
 from langchain.schema import Document
 
@@ -14,6 +19,12 @@ class DocumentService:
 
     def __init__(self, vector_store: Union[ExtendedPgVector, AsyncPgVector]):
         self.vector_store = vector_store
+        self._db_connection = None
+
+    def _get_db(self):
+        if self._db_connection is None:
+            self._db_connection = get_db_connection()
+        return self._db_connection
 
     async def add_documents(self, documents: list[DocumentCreate]) -> list[str]:
         """
@@ -96,3 +107,90 @@ class DocumentService:
         """
         existing_ids = await self.get_all_ids()
         return all(id in existing_ids for id in ids)
+
+    # ------------------------------------------------------------------
+    # Metadata management (PostgreSQL models)
+    # ------------------------------------------------------------------
+    async def create_document_record(
+        self,
+        *,
+        title: str,
+        content: str,
+        uploaded_by: str,
+        company_id: Optional[str] = None,
+        project_ids: Optional[List[str]] = None,
+    ) -> ResponseStatus:
+        try:
+            async for session in self._get_db().get_session():
+                repo = DocumentRepository(session)
+                link_repo = LinkRepository(session)
+
+                record = await repo.create_document(
+                    title=title,
+                    content=content,
+                    uploaded_by=uploaded_by,
+                    company_id=company_id,
+                )
+
+                if project_ids:
+                    for project_id in project_ids:
+                        await link_repo.link_document_to_project(str(record.id), project_id)
+
+                payload = {
+                    "id": str(record.id),
+                    "title": record.title,
+                    "company_id": str(record.company_id) if record.company_id else None,
+                    "uploaded_by": str(record.uploaded_by) if record.uploaded_by else None,
+                    "created_at": record.created_at,
+                }
+                return OK(message="Document record created", data=payload)
+        except Exception as exc:
+            return InternalError(message=f"Failed to create document record: {exc}")
+
+    async def list_documents_by_project(self, project_id: str) -> ResponseStatus:
+        try:
+            async for session in self._get_db().get_session():
+                repo = DocumentRepository(session)
+                records = await repo.list_documents_by_project(project_id)
+                data = [
+                    {
+                        "id": str(doc.id),
+                        "title": doc.title,
+                        "company_id": str(doc.company_id) if doc.company_id else None,
+                        "uploaded_by": str(doc.uploaded_by) if doc.uploaded_by else None,
+                        "created_at": doc.created_at,
+                    }
+                    for doc in records
+                ]
+                return OK(data=data)
+        except Exception as exc:
+            return InternalError(message=f"Failed to list project documents: {exc}")
+
+    async def list_documents_by_company(self, company_id: str) -> ResponseStatus:
+        try:
+            async for session in self._get_db().get_session():
+                repo = DocumentRepository(session)
+                records = await repo.list_documents_by_company(company_id)
+                data = [
+                    {
+                        "id": str(doc.id),
+                        "title": doc.title,
+                        "uploaded_by": str(doc.uploaded_by) if doc.uploaded_by else None,
+                        "created_at": doc.created_at,
+                    }
+                    for doc in records
+                ]
+                return OK(data=data)
+        except Exception as exc:
+            return InternalError(message=f"Failed to list company documents: {exc}")
+
+    async def delete_document_record(self, document_id: str) -> ResponseStatus:
+        try:
+            async for session in self._get_db().get_session():
+                repo = DocumentRepository(session)
+                removed = await repo.delete_document(document_id)
+                if not removed:
+                    return NotFound(message="Document not found", error_code="4004")
+                return OK(message="Document record deleted")
+        except Exception as exc:
+            return InternalError(message=f"Failed to delete document record: {exc}")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import List
+from typing import List, Optional
 from fastapi import UploadFile
 import re, os, io, hashlib
 from datetime import datetime
@@ -38,13 +38,16 @@ MAX_TOTAL_SIZE = 80 * 1024 * 1024
 
 class ProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    company_id: uuid.UUID
     name: str = Field(min_length=1, max_length=100, default="New Project")
-    description: str | None = Field(default=None, max_length=500)
-    start_date: datetime | None = Field(default=None)
-    end_date: datetime | None = Field(default=None)
+    description: Optional[str] = Field(default=None, max_length=500)
+    start_date: Optional[datetime] = Field(default=None)
+    end_date: Optional[datetime] = Field(default=None)
     is_public: bool = Field(default=False)
-    files: List[UploadFile] = Field(default=[])
-    member_ids: List[uuid.UUID] = Field(default=[])
+    files: List[UploadFile] = Field(default_factory=list)
+    member_ids: List[uuid.UUID] = Field(default_factory=list)
+    conversation_ids: List[uuid.UUID] = Field(default_factory=list)
+    document_ids: List[uuid.UUID] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -107,3 +110,12 @@ class ProjectRequest(BaseModel):
             seen_hashes.add(file_hash)
 
         return uploads
+
+
+class ProjectUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=500)
+    start_date: Optional[datetime] = Field(default=None)
+    end_date: Optional[datetime] = Field(default=None)

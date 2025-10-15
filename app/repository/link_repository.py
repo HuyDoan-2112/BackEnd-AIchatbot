@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, and_
-from app.models.project_chat_link import ProjectChatLink
-from app.models.project_document_link import ProjectDocumentLink
+from app.models.project_conversation import ProjectConversation
+from app.models.project_document import ProjectDocument
 from app.models.project_model import Project
-from app.models.chat_model import Chat
+from app.models.conversation_model import Conversation
 from app.models.document_model import Document
 
 
@@ -19,17 +19,17 @@ class LinkRepository:
     # ------------------------------------------------------------
     # ✅ CHAT ↔ PROJECT LINKS
     # ------------------------------------------------------------
-    async def link_chat_to_project(self, project_id: str, chat_id: str):
+    async def link_chat_to_project(self, project_id: str, conversation_id: str):
         """
         Link an existing chat to a project.
         Avoid duplicate links.
         """
         # Check if link already exists
         result = await self.db.execute(
-            select(ProjectChatLink).where(
+            select(ProjectConversation).where(
                 and_(
-                    ProjectChatLink.project_id == project_id,
-                    ProjectChatLink.chat_id == chat_id
+                    ProjectConversation.project_id == project_id,
+                    ProjectConversation.conversation_id == conversation_id
                 )
             )
         )
@@ -37,20 +37,20 @@ class LinkRepository:
         if existing:
             return existing  # Already linked
 
-        link = ProjectChatLink(project_id=project_id, chat_id=chat_id)
+        link = ProjectConversation(project_id=project_id, conversation_id=conversation_id)
         self.db.add(link)
         await self.db.commit()
         await self.db.refresh(link)
         return link
 
-    async def unlink_chat_from_project(self, project_id: str, chat_id: str) -> bool:
+    async def unlink_chat_from_project(self, project_id: str, conversation_id: str) -> bool:
         """
         Remove a chat from a project.
         """
-        stmt = delete(ProjectChatLink).where(
+        stmt = delete(ProjectConversation).where(
             and_(
-                ProjectChatLink.project_id == project_id,
-                ProjectChatLink.chat_id == chat_id
+                ProjectConversation.project_id == project_id,
+                ProjectConversation.conversation_id == conversation_id
             )
         )
         result = await self.db.execute(stmt)
@@ -62,16 +62,18 @@ class LinkRepository:
         Get all chat records linked to a specific project.
         """
         query = await self.db.execute(
-            select(ProjectChatLink).where(ProjectChatLink.project_id == project_id)
+            select(ProjectConversation).where(ProjectConversation.project_id == project_id)
         )
         links = query.scalars().all()
 
         # Optionally load full Chat objects
-        chat_ids = [link.chat_id for link in links]
-        if not chat_ids:
+        conversation_ids = [link.conversation_id for link in links]
+        if not conversation_ids:
             return []
 
-        chat_query = await self.db.execute(select(Chat).where(Chat.conversation_id.in_(chat_ids)))
+        chat_query = await self.db.execute(
+            select(Conversation).where(Conversation.conversation_id.in_(conversation_ids))
+        )
         return chat_query.scalars().all()
 
     # ------------------------------------------------------------
@@ -83,10 +85,10 @@ class LinkRepository:
         Avoid duplicate links.
         """
         result = await self.db.execute(
-            select(ProjectDocumentLink).where(
+            select(ProjectDocument).where(
                 and_(
-                    ProjectDocumentLink.project_id == project_id,
-                    ProjectDocumentLink.document_id == document_id
+                    ProjectDocument.project_id == project_id,
+                    ProjectDocument.document_id == document_id
                 )
             )
         )
@@ -94,7 +96,7 @@ class LinkRepository:
         if existing:
             return existing
 
-        link = ProjectDocumentLink(project_id=project_id, document_id=document_id)
+        link = ProjectDocument(project_id=project_id, document_id=document_id)
         self.db.add(link)
         await self.db.commit()
         await self.db.refresh(link)
@@ -104,10 +106,10 @@ class LinkRepository:
         """
         Remove a document from a project.
         """
-        stmt = delete(ProjectDocumentLink).where(
+        stmt = delete(ProjectDocument).where(
             and_(
-                ProjectDocumentLink.project_id == project_id,
-                ProjectDocumentLink.document_id == document_id
+                ProjectDocument.project_id == project_id,
+                ProjectDocument.document_id == document_id
             )
         )
         result = await self.db.execute(stmt)
@@ -119,7 +121,7 @@ class LinkRepository:
         Get all document records linked to a specific project.
         """
         query = await self.db.execute(
-            select(ProjectDocumentLink).where(ProjectDocumentLink.project_id == project_id)
+            select(ProjectDocument).where(ProjectDocument.project_id == project_id)
         )
         links = query.scalars().all()
 
