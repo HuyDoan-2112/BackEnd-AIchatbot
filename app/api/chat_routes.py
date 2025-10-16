@@ -102,7 +102,7 @@ async def create_chat_completion(
         if request.stream:
             async def generate():
                 try:
-                    async for chunk in get_chat_service().create_completion_stream(request):
+                    async for chunk in get_chat_service.create_completion_stream(request):
                         # Format as SSE
                         data = chunk.model_dump_json()
                         yield f"data: {data}\n\n"
@@ -131,7 +131,7 @@ async def create_chat_completion(
             )
         
         # Handle non-streaming
-        response = await get_chat_service().create_completion(request)
+        response = await get_chat_service.create_completion(request)
         return response
         
     except NotImplementedError as e:
@@ -175,7 +175,7 @@ async def stream_chat_completion(request: ChatCompletionRequest):
     """
     async def event_generator():
         try:
-            async for chunk in get_chat_service().create_completion_stream(request):
+            async for chunk in get_chat_service.create_completion_stream(request):
                 # Format as SSE
                 data = chunk.model_dump_json()
                 yield f"data: {data}\n\n"
@@ -298,7 +298,7 @@ async def list_my_conversations(
     limit: int = 50,
     current_user: str = Depends(get_current_user),
 ):
-    result = await get_chat_service().list_user_conversations(
+    result = await get_chat_service.list_user_conversations(
         current_user,
         project_id=project_id,
         company_id=company_id,
@@ -316,7 +316,7 @@ async def get_conversation(
     conversation_id: str,
     current_user: str = Depends(get_current_user),
 ):
-    result = await get_chat_service().get_conversation_details(conversation_id, user_id=current_user)
+    result = await get_chat_service.get_conversation_details(conversation_id, user_id=current_user)
     return _send_status(result)
 
 
@@ -333,7 +333,7 @@ async def list_conversation_messages(
     include_usage: bool = False,
     current_user: str = Depends(get_current_user),
 ):
-    result = await get_chat_service().get_conversation_messages(
+    result = await get_chat_service.get_conversation_messages(
         conversation_id,
         user_id=current_user,
         limit=limit,
