@@ -15,8 +15,16 @@ def _send(result: ResponseStatus):
     raise HTTPException(status_code=500, detail="Unexpected service response")
 
 
+@router.get("/me")
+async def get_current_user_profile(current_user: str = Depends(get_current_user)):
+    result = await user_service.get_user(current_user)
+    return _send(result)
+
+
 @router.get("/{user_id}")
 async def get_user(user_id: str, current_user: str = Depends(get_current_user)):
+    if user_id.lower() == "me":
+        user_id = current_user
     result = await user_service.get_user(user_id)
     return _send(result)
 
@@ -27,5 +35,7 @@ async def update_user(
     payload: Dict[str, Any],
     current_user: str = Depends(get_current_user),
 ):
+    if user_id.lower() == "me":
+        user_id = current_user
     result = await user_service.update_user(user_id, payload)
     return _send(result)

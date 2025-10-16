@@ -74,6 +74,9 @@ class AuthService:
             if isinstance(save_result, InternalError):
                 logger.error(f"Login failed for {email}: Could not save refresh token")
                 return save_result
+            if isinstance(save_result, ResponseStatus) and not save_result.success:
+                logger.error(f"Login failed for {email}: Could not save refresh token")
+                return save_result
 
             logger.info(f"Login successful for user: {checked_user['username']} ({email})")
             return OK(message="Login successful", data={
@@ -120,25 +123,28 @@ class AuthService:
             # Verify refresh token
             result = await self.user_repository.verify_refresh_token(token_str)
 
-            # Handle error responses
-            if isinstance(result, (NotFound, InternalError)):
-                return result
-
-            # If result is a response object, extract user data
-            if isinstance(result, dict) and result.get('success'):
-                user_data = result.get('data')
-                if not user_data:
-                    return InvalidToken(message="Invalid refresh token", error_code="4012")
-
-                # Generate new access token
-                access_token = create_access_token(data={"sub": str(user_data['id'])})
-
-                return OK(message="Token refreshed successfully", data={
-                    "access_token": access_token,
-                    "user": user_data
-                })
+            if isinstance(result, ResponseStatus):
+                if not result.success:
+                    return result
+                user_data = result.data or {}
+            elif isinstance(result, dict) and result.get("success"):
+                # Backwards compatibility if repository returns dict
+                user_data = result.get("data") or {}
             else:
                 return NotFound(message="Invalid or expired refresh token", error_code="4004")
+
+            if not user_data:
+                return InvalidToken(message="Invalid refresh token", error_code="4012")
+
+            access_token = create_access_token(data={"sub": str(user_data["id"])})
+
+            return OK(
+                message="Token refreshed successfully",
+                data={
+                    "access_token": access_token,
+                    "user": user_data,
+                },
+            )
         except Exception as e:
             return InternalError(message=f"Failed to refresh token: {str(e)}", error_code="5000")
     
@@ -218,5 +224,3 @@ class AuthService:
         except Exception as e:
             logger.error(f"Signup exception for {username}: {str(e)}", exc_info=True)
             return InternalError(message=f"Failed to signup: {str(e)}", error_code="5000")
-
-

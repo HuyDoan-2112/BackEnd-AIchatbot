@@ -16,7 +16,6 @@ from app.models.message_model import (
     MessageStreamChunk,
     MessageUsage,
 )
-from app.models.tool_call_model import ToolCall, ToolResult
 
 
 class ChatRepository:
@@ -43,7 +42,6 @@ class ChatRepository:
             "title": conversation.title,
             "model": conversation.model,
             "created_by": str(conversation.created_by) if conversation.created_by else None,
-            "company_id": str(conversation.company_id) if conversation.company_id else None,
             "project_id": str(conversation.project_id) if conversation.project_id else None,
             "preset_id": str(conversation.preset_id) if conversation.preset_id else None,
             "is_archived": conversation.is_archived,
@@ -81,18 +79,25 @@ class ChatRepository:
 
     async def create_chat(
         self,
-        company_id: str,
-        project_id: str,
+        company_id: Optional[str],
+        project_id: Optional[str],
         title: Optional[str],
         created_by: Optional[str],
         model: Optional[str] = None,
         preset_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a new chat conversation in the database."""
+        """
+        Create a new chat conversation in the database.
+
+        Note: company_id is accepted for forward compatibility but is not yet stored
+        on the Conversation model.
+        """
+        if not project_id:
+            return ValidationError(message="project_id is required to create a chat", error_code="4002")
+
         try:
             async for session in self._get_db_connection().get_session():
                 new_chat = Conversation(
-                    company_id=company_id,
                     project_id=project_id,
                     title=title,
                     model_label=model,
@@ -391,7 +396,6 @@ class ChatRepository:
                     stmt = stmt.options(
                         selectinload(Message.attachments),
                         selectinload(Message.citations),
-                        selectinload(Message.tool_calls).selectinload(ToolCall.result),
                         selectinload(Message.stream_chunks),
                     )
                 if include_usage:
@@ -504,58 +508,6 @@ class ChatRepository:
                 return citation
         except Exception as e:
             return InternalError(message=f"Failed to add citation: {str(e)}", error_code="5000")
-
-    async def record_tool_call(
-        self,
-        message_id: str,
-        *,
-        tool_name: str,
-        arguments_json: Dict[str, Any],
-    ) -> ToolCall:
-        try:
-            async for session in self._get_db_connection().get_session():
-                call = ToolCall(
-                    message_id=message_id,
-                    tool_name=tool_name,
-                    arguments_json=arguments_json,
-                )
-                session.add(call)
-                await session.commit()
-                await session.refresh(call)
-                return call
-        except Exception as e:
-            return InternalError(message=f"Failed to record tool call: {str(e)}", error_code="5000")
-
-    async def record_tool_result(
-        self,
-        tool_call_id: str,
-        *,
-        result_json: Optional[Dict[str, Any]] = None,
-        error_text: Optional[str] = None,
-    ) -> ToolResult:
-        try:
-            async for session in self._get_db_connection().get_session():
-                result = await session.execute(
-                    select(ToolResult).where(ToolResult.tool_call_id == tool_call_id)
-                )
-                existing = result.scalar_one_or_none()
-                if existing:
-                    existing.result_json = result_json
-                    existing.error_text = error_text
-                    session.add(existing)
-                    target = existing
-                else:
-                    target = ToolResult(
-                        tool_call_id=tool_call_id,
-                        result_json=result_json,
-                        error_text=error_text,
-                    )
-                    session.add(target)
-                await session.commit()
-                await session.refresh(target)
-                return target
-        except Exception as e:
-            return InternalError(message=f"Failed to record tool result: {str(e)}", error_code="5000")
 
     async def save_message_usage(
         self,

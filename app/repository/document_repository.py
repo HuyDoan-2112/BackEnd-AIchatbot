@@ -3,7 +3,6 @@ from sqlalchemy import select, update, delete, and_, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.models.document_model import Document
-from app.models.project_document import ProjectDocument
 
 
 class DocumentRepository:
@@ -24,17 +23,24 @@ class DocumentRepository:
         title: str,
         content: str,
         uploaded_by: str,
-        company_id: Optional[str] = None,
+        project_id: str,
+        filename: Optional[str] = None,
+        file_path: Optional[str] = None,
+        file_type: Optional[str] = None,
+        file_size_bytes: Optional[int] = None,
     ) -> Document:
         """
-        Create and save a new document.
-        - company_id can be None for individual (personal) documents.
+        Create and save a new document linked to a project.
         """
         document = Document(
             title=title,
             content=content,
             uploaded_by=uploaded_by,
-            company_id=company_id,
+            project_id=project_id,
+            filename=filename,
+            file_path=file_path,
+            file_type=file_type,
+            file_size_bytes=file_size_bytes,
         )
         self.db.add(document)
         await self.db.commit()
@@ -47,12 +53,9 @@ class DocumentRepository:
     async def get_document_by_id(self, document_id: str) -> Optional[Document]:
         """
         Retrieve a document by ID.
-        Includes relationships (if any) such as project links.
         """
         result = await self.db.execute(
-            select(Document)
-            .where(Document.id == document_id)
-            .options(selectinload(Document.project_links))
+            select(Document).where(Document.id == document_id)
         )
         return result.scalar_one_or_none()
 
@@ -65,23 +68,13 @@ class DocumentRepository:
         )
         return result.scalars().all()
 
-    async def list_documents_by_company(self, company_id: str) -> List[Document]:
-        """
-        Return all documents that belong to a specific company.
-        """
-        result = await self.db.execute(
-            select(Document).where(Document.company_id == company_id)
-        )
-        return result.scalars().all()
-
     async def list_documents_by_project(self, project_id: str) -> List[Document]:
         """
         Return all documents linked to a specific project.
+        Documents now have direct FK to project.
         """
         result = await self.db.execute(
-            select(Document)
-            .join(ProjectDocument, ProjectDocument.document_id == Document.id)
-            .where(ProjectDocument.project_id == project_id)
+            select(Document).where(Document.project_id == project_id)
         )
         return result.scalars().all()
 

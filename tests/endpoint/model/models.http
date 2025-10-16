@@ -1,0 +1,126 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### MODELS & CONFIGURATION
+### ============================================
+
+### List All Available Models
+# @name list_models
+GET {{base}}/models
+
+### Get Available Chat Models
+# @name list_chat_models
+GET {{base}}/models/chat
+
+### Get Available Embedding Models
+# @name list_embedding_models
+GET {{base}}/models/embeddings
+
+### Get Model Details
+# @name get_model_details
+GET {{base}}/models/openai/gpt-oss-20b
+
+### ============================================
+### PREREQUISITE: Setup for Advanced Features
+### ============================================
+
+### Signup User
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "model_user{{$timestamp}}",
+  "email": "modeluser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Company
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Model Testing Company {{$timestamp}}",
+  "description": "Company for model testing",
+  "location": "San Diego, CA"
+}
+
+### Create Project
+# @name create_project
+POST {{base}}/projects
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Model Experiment Project {{$timestamp}}",
+  "description": "Project for testing different models",
+  "company_id": "{{create_company.response.body.$.data.id}}"
+}
+
+### ============================================
+### ADVANCED: Model Selection & Comparison
+### ============================================
+
+### Chat with Different Models - Model 1
+# @name chat_model_1
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is quantum computing?"
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 200,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "conversation_title": "Model Comparison - GPT-OSS"
+  }
+}
+
+### Chat with Different Models - Model 2
+# @name chat_model_2
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "qwen/qwen3-4b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is quantum computing?"
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 200,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "conversation_title": "Model Comparison - Qwen"
+  }
+}
+
+### ============================================
+### CLEANUP (Optional)
+### ============================================
+
+### Delete Project
+# @name delete_project
+DELETE {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

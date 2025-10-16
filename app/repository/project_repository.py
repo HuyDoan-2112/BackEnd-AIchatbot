@@ -6,8 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.project_model import Project
-from app.models.project_conversation import ProjectConversation
-from app.models.project_document import ProjectDocument
 from app.models.conversation_model import Conversation
 from app.models.document_model import Document
 
@@ -30,17 +28,19 @@ class ProjectRepository:
             "name": project.name,
             "description": project.description,
             "created_by": str(project.created_by) if project.created_by else None,
-            "company_id": str(project.company_id) if project.company_id else None,
+            "organization_id": str(project.organization_id) if project.organization_id else None,
+            "rag_enabled": project.rag_enabled,
+            "rag_vector_store_id": project.rag_vector_store_id,
+            "default_model": project.default_model,
+            "system_prompt": project.system_prompt,
             "start_date": project.start_date,
             "end_date": project.end_date,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
         }
         if include_relations:
-            payload["conversation_ids"] = [
-                str(conv.conversation_id) for conv in project.conversation_links
-            ]
-            payload["document_ids"] = [
-                str(link.document_id) for link in project.document_links
-            ]
+            payload["conversation_count"] = len(project.conversations) if project.conversations else 0
+            payload["document_count"] = len(project.documents) if project.documents else 0
         return payload
 
     # ------------------------------------------------------------------
@@ -50,9 +50,17 @@ class ProjectRepository:
         self,
         *,
         name: str,
-        company_id: str,
+        organization_id: str,
         created_by: Optional[str],
         description: Optional[str] = None,
+        rag_enabled: bool = True,
+        rag_vector_store_id: Optional[str] = None,
+        rag_chunk_size: int = 1000,
+        rag_chunk_overlap: int = 200,
+        rag_config: Optional[dict] = None,
+        rules: Optional[dict] = None,
+        default_model: str = "gpt-4",
+        system_prompt: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> Project:
@@ -60,7 +68,15 @@ class ProjectRepository:
             name=name,
             description=description,
             created_by=created_by,
-            company_id=company_id,
+            organization_id=organization_id,
+            rag_enabled=rag_enabled,
+            rag_vector_store_id=rag_vector_store_id,
+            rag_chunk_size=rag_chunk_size,
+            rag_chunk_overlap=rag_chunk_overlap,
+            rag_config=rag_config,
+            rules=rules,
+            default_model=default_model,
+            system_prompt=system_prompt,
             start_date=start_date or datetime.utcnow(),
             end_date=end_date,
         )
@@ -73,8 +89,8 @@ class ProjectRepository:
         stmt = select(Project).where(Project.id == project_id)
         if with_relations:
             stmt = stmt.options(
-                selectinload(Project.conversation_links).selectinload(ProjectConversation.conversation),
-                selectinload(Project.document_links).selectinload(ProjectDocument.document),
+                selectinload(Project.conversations),
+                selectinload(Project.documents),
             )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
@@ -82,7 +98,7 @@ class ProjectRepository:
     async def list_projects(
         self,
         *,
-        company_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
         limit: int = 100,
         with_relations: bool = False,
     ) -> List[Project]:
@@ -91,12 +107,12 @@ class ProjectRepository:
             .order_by(Project.start_date.desc())
             .limit(limit)
         )
-        if company_id:
-            stmt = stmt.where(Project.company_id == company_id)
+        if organization_id:
+            stmt = stmt.where(Project.organization_id == organization_id)
         if with_relations:
             stmt = stmt.options(
-                selectinload(Project.conversation_links),
-                selectinload(Project.document_links),
+                selectinload(Project.conversations),
+                selectinload(Project.documents),
             )
         result = await self.db.execute(stmt)
         return result.scalars().all()
@@ -107,6 +123,11 @@ class ProjectRepository:
         *,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        rag_enabled: Optional[bool] = None,
+        rag_config: Optional[dict] = None,
+        rules: Optional[dict] = None,
+        default_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> Optional[Project]:
@@ -115,6 +136,16 @@ class ProjectRepository:
             changes["name"] = name
         if description is not None:
             changes["description"] = description
+        if rag_enabled is not None:
+            changes["rag_enabled"] = rag_enabled
+        if rag_config is not None:
+            changes["rag_config"] = rag_config
+        if rules is not None:
+            changes["rules"] = rules
+        if default_model is not None:
+            changes["default_model"] = default_model
+        if system_prompt is not None:
+            changes["system_prompt"] = system_prompt
         if start_date is not None:
             changes["start_date"] = start_date
         if end_date is not None:
@@ -140,22 +171,24 @@ class ProjectRepository:
         return result.rowcount > 0
 
     # ------------------------------------------------------------------
-    # Convenience helpers for accessing linked resources
+    # Convenience helpers for accessing linked resources (Direct FK now!)
     # ------------------------------------------------------------------
     async def get_project_conversations(self, project_id: str) -> List[Conversation]:
+        """Get all conversations for a project (direct relationship)."""
         stmt = (
             select(Conversation)
-            .join(ProjectConversation, ProjectConversation.conversation_id == Conversation.conversation_id)
-            .where(ProjectConversation.project_id == project_id)
+            .where(Conversation.project_id == project_id)
+            .order_by(Conversation.created_at.desc())
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
     async def get_project_documents(self, project_id: str) -> List[Document]:
+        """Get all documents for a project (direct relationship)."""
         stmt = (
             select(Document)
-            .join(ProjectDocument, ProjectDocument.document_id == Document.id)
-            .where(ProjectDocument.project_id == project_id)
+            .where(Document.project_id == project_id)
+            .order_by(Document.created_at.desc())
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()

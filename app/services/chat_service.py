@@ -67,6 +67,23 @@ class ChatService:
             api_key=self.settings.OPENAI_API_KEY or "lm-studio",  # LM Studio doesn't validate API key
             http_client=http_client
         )
+    
+    # Helper function for a proper model when client call it.
+    
+    async def _get_client_for_model(self, model_id: str) -> AsyncOpenAI:
+        """
+        Dynamically create an OpenAI-compatible client for a specific model,
+        using its base_url from the ModelRegistry.
+        """
+        registry1 = get_model_registry()
+        model_config = registry1.get_chat_model(model_id)
+        base_url = model_config.get("base_url", self.settings.MODEL_BASE_URL)
+        api_key = model_config.get("api_key", self.settings.OPENAI_API_KEY or "lm-studio")
+        
+        # Reuse the same optimized HTTP client
+        http_client =self.client._client if hasattr(self, "client") else httpx.AsyncClient(http2=True)
+        return AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=http_client)
+    
 
     def _convert_messages_to_openai_format(self, messages) -> List[Dict[str, Any]]:
         """Convert internal message format or LangChain BaseMessage to OpenAI API format."""
@@ -124,19 +141,41 @@ class ChatService:
 
     async def _get_or_create_conversation(self, request: ChatCompletionRequest) -> str:
         """
-        Ensure a conversation exists for the request, creating one if necessary.
+        Ensure a conversation identifier exists for the request.
+
+        Anonymous users (no project context) receive an ephemeral conversation id and
+        we skip database persistence. Authenticated requests with a project_id create
+        or reuse a persisted conversation record.
         """
         metadata = dict(request.metadata or {})
         candidate_id = metadata.get("conversation_id") or metadata.get("session_id")
-        conversation_id: Optional[str] = None
 
+        # Determine whether this request should persist conversation history
+        persist_flag = metadata.get("persist_conversation")
+        if isinstance(persist_flag, str):
+            persist_conversation = persist_flag.lower() in {"1", "true", "yes", "on"}
+        elif persist_flag is None:
+            persist_conversation = bool(metadata.get("project_id"))
+        else:
+            persist_conversation = bool(persist_flag)
+
+        if not persist_conversation:
+            # Ephemeral conversation: reuse provided identifier or create a new one.
+            conversation_id = str(candidate_id) if candidate_id else str(uuid4())
+            metadata["conversation_id"] = conversation_id
+            metadata["persist_conversation"] = False
+            request.metadata = metadata
+            logger.debug("Using ephemeral conversation %s (no project context provided)", conversation_id)
+            return conversation_id
+
+        conversation_id: Optional[str] = None
+        project_uuid: Optional[str] = None
         if candidate_id:
             try:
                 conversation_uuid = str(UUID(str(candidate_id)))
                 existing = await self.chat_repository.get_chat_by_id(conversation_uuid)
                 if isinstance(existing, ResponseStatus):
                     if existing.success:
-                        # Unexpected, but fall back to returned payload if available
                         data = getattr(existing, "data", None) or {}
                         conversation_id = data.get("conversation_id")
                     else:
@@ -144,43 +183,54 @@ class ChatService:
                 else:
                     conversation_id = conversation_uuid
             except ValueError:
-                logger.debug("Invalid conversation_id provided; generating a new one.")
+                logger.debug("Invalid persisted conversation_id provided; will create a new one.")
 
         if not conversation_id:
-            company_id = metadata.get("company_id")
             project_id = metadata.get("project_id")
+            if not project_id:
+                raise ValueError("project_id is required in metadata to persist chat history")
 
-            # Allow anonymous users to chat without company_id/project_id
-            if not company_id or not project_id:
-                logger.info("No company_id/project_id provided - using temporary conversation (anonymous mode)")
-                conversation_id = uuid4().hex
+            try:
+                project_uuid = str(UUID(str(project_id)))
+            except ValueError:
+                raise ValueError("project_id metadata must be a valid UUID")
+
+            company_id = metadata.get("company_id")
+            title = metadata.get("conversation_title") or metadata.get("title")
+            preset_id = metadata.get("preset_id")
+
+            creation = await self.chat_repository.create_chat(
+                company_id=company_id,
+                project_id=project_uuid,
+                title=title,
+                created_by=request.user,
+                model=request.model,
+                preset_id=preset_id,
+            )
+
+            if isinstance(creation, ResponseStatus):
+                if not creation.success:
+                    logger.error(f"Failed to create conversation: {creation.message}")
+                    raise ValueError(creation.message)
+                payload = creation.data or {}
+                conversation_id = payload.get("conversation_id")
             else:
-                # Authenticated user with company/project - save chat history
-                title = metadata.get("conversation_title") or metadata.get("title")
-                preset_id = metadata.get("preset_id")
+                conversation_id = str(creation.conversation_id)
 
-                creation = await self.chat_repository.create_chat(
-                    company_id=company_id,
-                    project_id=project_id,
-                    title=title,
-                    created_by=request.user,
-                    model=request.model,
-                    preset_id=preset_id,
-                )
-
-                if isinstance(creation, ResponseStatus):
-                    if not creation.success:
-                        raise ValueError(creation.message)
-                    payload = creation.data or {}
-                    conversation_id = payload.get("conversation_id")
-                else:
-                    conversation_id = str(creation.conversation_id)
+            logger.info(
+                "Created conversation %s (user: %s, project: %s)",
+                conversation_id,
+                request.user or "anonymous",
+                project_uuid,
+            )
 
         if not conversation_id:
             raise ValueError("Failed to resolve conversation identifier.")
 
-        # Ensure metadata carries the resolved conversation ID for the rest of this request.
         metadata["conversation_id"] = conversation_id
+        if project_uuid:
+            metadata["project_id"] = project_uuid
+        metadata["persist_conversation"] = True
         request.metadata = metadata
         return conversation_id
 
@@ -203,6 +253,19 @@ class ChatService:
         assistant_message: ResponseChatMessage,
         usage: Usage,
     ) -> None:
+        metadata = request.metadata or {}
+        persist_flag = metadata.get("persist_conversation")
+        if isinstance(persist_flag, str):
+            persist_conversation = persist_flag.lower() in {"1", "true", "yes", "on"}
+        elif persist_flag is None:
+            persist_conversation = bool(metadata.get("project_id"))
+        else:
+            persist_conversation = bool(persist_flag)
+
+        if not persist_conversation:
+            logger.debug("Skipping persistence for conversation %s (ephemeral session)", conversation_id)
+            return
+
         try:
             await self._register_participant(conversation_id, request.user)
 
@@ -253,7 +316,7 @@ class ChatService:
                 if isinstance(usage_result, ResponseStatus) and not usage_result.success:
                     logger.debug(f"Failed to persist usage: {usage_result.message}")
         except Exception as exc:
-            logger.debug(f"Message persistence failed: {exc}")
+            logger.error(f"Message persistence failed: {exc}", exc_info=True)
 
     async def create_completion(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """Create a non-streaming chat completion using LM Studio."""
@@ -337,7 +400,8 @@ class ChatService:
         try:
             # Call LM Studio using OpenAI client
             llm_start = time.time()
-            response = await self.client.chat.completions.create(
+            client = await self._get_client_for_model(request.model)
+            response = await client.chat.completions.create(
                 model=request.model,
                 messages=openai_messages,
                 temperature=request.temperature or self.settings.MODEL_TEMPERATURE,
@@ -524,7 +588,8 @@ class ChatService:
 
         try:
             # Stream from LM Studio using OpenAI client
-            stream = await self.client.chat.completions.create(
+            client = await self._get_client_for_model(request.model)
+            stream = await client.chat.completions.create(
                 model=request.model,
                 messages=openai_messages,
                 temperature=request.temperature or self.settings.MODEL_TEMPERATURE,
@@ -694,4 +759,11 @@ class ChatService:
         except Exception as e:
             return ResponseStatus(message=f"Failed to list messages: {e}", status_code=500)
 
-chat_service = ChatService()
+_chat_service: Optional[ChatService] = None
+
+def get_chat_service() -> ChatService:
+    """Lazy singleton getter to avoid premature initialization before app startup."""
+    global _chat_service
+    if _chat_service is None:
+        _chat_service = ChatService()
+    return _chat_service

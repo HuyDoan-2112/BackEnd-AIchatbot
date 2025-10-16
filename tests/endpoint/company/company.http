@@ -1,0 +1,102 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### STEP 1: Authentication
+### ============================================
+
+### Signup User 1 (Company Owner)
+# @name signup_user1
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "owner_user{{$timestamp}}",
+  "email": "owner{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Signup User 2 (To be added as member)
+# @name signup_user2
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "member_user{{$timestamp}}",
+  "email": "member{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### ============================================
+### STEP 2: Company Management (CRUD)
+### ============================================
+
+### Create Company (User 1)
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+{
+  "name": "Acme Corp {{$timestamp}}",
+  "description": "A leading innovator in technology solutions",
+  "location": "San Francisco, CA"
+}
+
+### Get Company Details
+# @name get_company
+GET {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+### List All Companies (User 1)
+# @name list_companies
+GET {{base}}/companies
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+### Update Company
+# @name update_company
+PUT {{base}}/companies/{{create_company.response.body.$.data.id}}
+Content-Type: application/json
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+{
+  "name": "Acme Corp Updated {{$timestamp}}",
+  "description": "Updated description - A leader in AI and ML solutions",
+  "location": "San Francisco, CA"
+}
+
+### ============================================
+### STEP 3: Company Membership Management
+### ============================================
+
+### Add Member to Company (Add User 2)
+# @name add_member
+POST {{base}}/companies/{{create_company.response.body.$.data.id}}/members
+Content-Type: application/json
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+{
+  "user_id": "{{signup_user2.response.body.$.data.user.id}}",
+  "role": "member"
+}
+
+### List Company Members
+# @name list_members
+GET {{base}}/companies/{{create_company.response.body.$.data.id}}/members
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+### ============================================
+### STEP 4: Cleanup (Optional)
+### ============================================
+
+### Remove Member from Company
+# @name remove_member
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}/members/{{signup_user2.response.body.$.data.user.id}}
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup_user1.response.body.$.data.access_token}}

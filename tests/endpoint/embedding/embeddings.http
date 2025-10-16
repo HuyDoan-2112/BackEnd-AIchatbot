@@ -1,0 +1,92 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### PREREQUISITE: Setup
+### ============================================
+
+### Signup User
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "embed_user{{$timestamp}}",
+  "email": "embeduser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Company
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Embedding Company {{$timestamp}}",
+  "description": "Company for embedding and retrieval testing",
+  "location": "Seattle, WA"
+}
+
+### ============================================
+### EMBEDDINGS & VECTOR SEARCH
+### ============================================
+
+### Generate Embedding for Text
+# @name create_embedding
+POST {{base}}/embeddings
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "texts": [
+    "Machine learning is a subset of artificial intelligence",
+    "Deep learning uses neural networks",
+    "Natural language processing helps computers understand human language"
+  ],
+  "model": "text-embedding-embeddinggemma-300m"
+}
+
+### Batch Embeddings
+# @name create_batch_embeddings
+POST {{base}}/embeddings/batch
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "texts": [
+    "The quick brown fox jumps over the lazy dog",
+    "Python is a popular programming language",
+    "Data science combines statistics and programming",
+    "Cloud computing provides scalable infrastructure",
+    "DevOps improves collaboration between development and operations"
+  ],
+  "model": "text-embedding-embeddinggemma-300m"
+}
+
+### ============================================
+### VECTOR SEARCH / RETRIEVAL
+### ============================================
+
+### Search Similar Embeddings
+# @name search_embeddings
+POST {{base}}/embeddings/search
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "query": "artificial intelligence and neural networks",
+  "top_k": 3,
+  "model": "text-embedding-embeddinggemma-300m",
+  "company_id": "{{create_company.response.body.$.data.id}}"
+}
+
+### ============================================
+### CLEANUP (Optional)
+### ============================================
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

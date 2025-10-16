@@ -1,0 +1,122 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### PREREQUISITE: Setup (Company, Project, User)
+### ============================================
+
+### Signup User
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "doc_user{{$timestamp}}",
+  "email": "docuser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Company
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Document Company {{$timestamp}}",
+  "description": "Company for document management",
+  "location": "Boston, MA"
+}
+
+### Create Project
+# @name create_project
+POST {{base}}/projects
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Document Management Project {{$timestamp}}",
+  "description": "Project for uploading and managing documents",
+  "company_id": "{{create_company.response.body.$.data.id}}"
+}
+
+### ============================================
+### DOCUMENT/FILE UPLOAD
+### ============================================
+
+### Upload Document (Create Document Record)
+# @name upload_document
+POST {{base}}/documents/upload
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "filename": "sample_document.txt",
+  "content_type": "text/plain",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "company_id": "{{create_company.response.body.$.data.id}}",
+  "file_size": 1024,
+  "tags": ["sample", "documentation"]
+}
+
+### Get Document Details
+# @name get_document
+GET {{base}}/documents/{{upload_document.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### List Documents in Project
+# @name list_documents
+GET {{base}}/documents?project_id={{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### List Documents in Company
+# @name list_company_documents
+GET {{base}}/documents?company_id={{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Update Document Metadata
+# @name update_document
+PUT {{base}}/documents/{{upload_document.response.body.$.data.id}}
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "filename": "sample_document_updated.txt",
+  "tags": ["updated", "documentation", "important"]
+}
+
+### ============================================
+### DOCUMENT RETRIEVAL (RAG)
+### ============================================
+
+### Retrieve Documents (Search/Filter)
+# @name retrieve_documents
+POST {{base}}/retrieval
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "query": "sample document",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "top_k": 5
+}
+
+### ============================================
+### CLEANUP (Optional)
+### ============================================
+
+### Delete Document
+# @name delete_document
+DELETE {{base}}/documents/{{upload_document.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Project
+# @name delete_project
+DELETE {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

@@ -1,19 +1,36 @@
-### Login
-POST http://localhost:8000/api/v1/auth/login
+@base = http://localhost:8000/api/v1
+@username = testuser{{$timestamp}}
+@email = {{username}}@example.com
+@password = TestPassword123!
+
+### Signup (generates fresh user + tokens)
+# @name signup
+POST {{base}}/auth/signup
 Content-Type: application/json
 
 {
-    "email": "testuser@example.com",
-    "password": "TestPassword123!"
+  "username": "{{username}}",
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "confirm_password": "{{password}}"
 }
 
-### Signup
-POST http://localhost:8000/api/v1/auth/signup
+### Login (use the same email/password; refreshes tokens)
+# @name login
+POST {{base}}/auth/login
 Content-Type: application/json
 
 {
-    "username": "testuser",
-    "email": "testuser@example.com",
-    "password": "TestPassword123!",
-    "confirm_password": "TestPassword123!"
+  "email": "{{signup.response.body.$.data.user.email}}",
+  "password": "{{password}}"
+}
+
+### Log out
+# @name logout
+POST {{base}}/auth/logout
+Authorization: Bearer {{login.response.body.$.data.access_token}}
+Content-Type: application/json
+
+{
+  "refresh_token": "{{login.response.body.$.data.refresh_token}}"
 }

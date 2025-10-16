@@ -15,16 +15,13 @@ from app.models.base import Base
 
 # Import all models so alembic can detect them
 from app.models.user_model import User
-from app.models.company_model import Company
-from app.models.company_membership_model import CompanyMembership
+from app.models.organization_model import Organization
+from app.models.organization_membership_model import OrganizationMembership
 from app.models.project_model import Project
 from app.models.conversation_model import Conversation
 from app.models.message_model import Message
 from app.models.document_model import Document
 from app.models.assistant_preset_model import AssistantPreset
-from app.models.tool_call_model import ToolCall
-from app.models.project_conversation import ProjectConversation
-from app.models.project_document import ProjectDocument
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

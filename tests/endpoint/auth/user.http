@@ -1,0 +1,67 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### USER MANAGEMENT
+### ============================================
+
+### Get Current User Profile
+# @name get_current_user
+GET {{base}}/users/me
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Update User Profile
+# @name update_user
+PUT {{base}}/users/me
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "username": "updated_user{{$timestamp}}",
+  "full_name": "John Doe",
+  "email": "john.doe{{$timestamp}}@example.com"
+}
+
+### ============================================
+### PREREQUISITE: Create a test user
+### ============================================
+
+### Signup (generates fresh user + tokens)
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "testuser{{$timestamp}}",
+  "email": "testuser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Login (refresh tokens)
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{signup.response.body.$.data.user.email}}",
+  "password": "TestPassword123!"
+}
+
+### Refresh Token
+# @name refresh_token
+POST {{base}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "{{signup.response.body.$.data.refresh_token}}"
+}
+
+### Logout
+# @name logout
+POST {{base}}/auth/logout
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "refresh_token": "{{signup.response.body.$.data.refresh_token}}"
+}

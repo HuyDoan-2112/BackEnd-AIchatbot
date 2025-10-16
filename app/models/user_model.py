@@ -22,8 +22,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     auth_sessions = relationship("AuthSession", back_populates="user")
-    company_memberships = relationship("CompanyMembership", back_populates="user", cascade="all, delete-orphan", overlaps="companies,users")
-    companies = relationship("Company", secondary="company_memberships", back_populates="users", overlaps="company_memberships,memberships")
+    organization_memberships = relationship("OrganizationMembership", back_populates="user", cascade="all, delete-orphan")
     conversation_memberships = relationship("ConversationParticipant", back_populates="user", cascade="all, delete-orphan")
     authored_messages = relationship("Message", back_populates="author")
     assistant_presets = relationship("AssistantPreset", back_populates="creator")

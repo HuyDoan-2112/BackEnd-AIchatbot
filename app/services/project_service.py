@@ -3,7 +3,6 @@ from datetime import datetime
 
 from app.db.postgresql import get_db_connection
 from app.repository.project_repository import ProjectRepository
-from app.repository.link_repository import LinkRepository
 from app.repository.document_repository import DocumentRepository
 from app.core.response_status import ResponseStatus, OK, NotFound, InternalError
 
@@ -26,37 +25,42 @@ class ProjectService:
         self,
         *,
         name: str,
-        company_id: str,
+        organization_id: str,
         created_by: Optional[str],
         description: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        conversation_ids: Optional[List[str]] = None,
-        document_ids: Optional[List[str]] = None,
+        rag_enabled: bool = False,
+        rag_vector_store_id: Optional[str] = None,
+        rag_chunk_size: Optional[int] = None,
+        rag_chunk_overlap: Optional[int] = None,
+        rag_config: Optional[Dict[str, Any]] = None,
+        rules: Optional[Dict[str, Any]] = None,
+        default_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> ResponseStatus:
+        """Create a new project with RAG configuration."""
         try:
             async for session in self._get_db().get_session():
                 repo = ProjectRepository(session)
-                link_repo = LinkRepository(session)
                 doc_repo = DocumentRepository(session)
 
                 project = await repo.create_project(
                     name=name,
-                    company_id=company_id,
+                    organization_id=organization_id,
                     created_by=created_by,
                     description=description,
                     start_date=start_date,
                     end_date=end_date,
+                    rag_enabled=rag_enabled,
+                    rag_vector_store_id=rag_vector_store_id,
+                    rag_chunk_size=rag_chunk_size,
+                    rag_chunk_overlap=rag_chunk_overlap,
+                    rag_config=rag_config,
+                    rules=rules,
+                    default_model=default_model,
+                    system_prompt=system_prompt,
                 )
-
-                # Link existing conversations/documents if provided
-                if conversation_ids:
-                    for conv_id in conversation_ids:
-                        await link_repo.link_chat_to_project(str(project.id), conv_id)
-
-                if document_ids:
-                    for doc_id in document_ids:
-                        await link_repo.link_document_to_project(str(project.id), doc_id)
 
                 payload = repo.serialize_project(project, include_relations=True)
                 payload["documents"] = [
@@ -86,7 +90,7 @@ class ProjectService:
     async def list_projects(
         self,
         *,
-        company_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
         limit: int = 100,
         include_relations: bool = False,
     ) -> ResponseStatus:
@@ -94,7 +98,7 @@ class ProjectService:
             async for session in self._get_db().get_session():
                 repo = ProjectRepository(session)
                 projects = await repo.list_projects(
-                    company_id=company_id,
+                    organization_id=organization_id,
                     limit=limit,
                     with_relations=include_relations,
                 )
@@ -114,6 +118,14 @@ class ProjectService:
         description: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        rag_enabled: Optional[bool] = None,
+        rag_vector_store_id: Optional[str] = None,
+        rag_chunk_size: Optional[int] = None,
+        rag_chunk_overlap: Optional[int] = None,
+        rag_config: Optional[Dict[str, Any]] = None,
+        rules: Optional[Dict[str, Any]] = None,
+        default_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> ResponseStatus:
         try:
             async for session in self._get_db().get_session():
@@ -124,6 +136,14 @@ class ProjectService:
                     description=description,
                     start_date=start_date,
                     end_date=end_date,
+                    rag_enabled=rag_enabled,
+                    rag_vector_store_id=rag_vector_store_id,
+                    rag_chunk_size=rag_chunk_size,
+                    rag_chunk_overlap=rag_chunk_overlap,
+                    rag_config=rag_config,
+                    rules=rules,
+                    default_model=default_model,
+                    system_prompt=system_prompt,
                 )
                 if not updated:
                     return NotFound(message="Project not found", error_code="4004")
@@ -141,50 +161,6 @@ class ProjectService:
                 return OK(message="Project deleted")
         except Exception as exc:
             return InternalError(message=f"Failed to delete project: {exc}")
-
-    async def attach_conversation(self, project_id: str, conversation_id: str) -> ResponseStatus:
-        try:
-            async for session in self._get_db().get_session():
-                link_repo = LinkRepository(session)
-                link = await link_repo.link_chat_to_project(project_id, conversation_id)
-                if isinstance(link, ResponseStatus):
-                    return link
-                return OK(message="Conversation linked", data={"project_id": project_id, "conversation_id": conversation_id})
-        except Exception as exc:
-            return InternalError(message=f"Failed to link conversation: {exc}")
-
-    async def detach_conversation(self, project_id: str, conversation_id: str) -> ResponseStatus:
-        try:
-            async for session in self._get_db().get_session():
-                link_repo = LinkRepository(session)
-                removed = await link_repo.unlink_chat_from_project(project_id, conversation_id)
-                if not removed:
-                    return NotFound(message="Link not found", error_code="4004")
-                return OK(message="Conversation unlinked")
-        except Exception as exc:
-            return InternalError(message=f"Failed to unlink conversation: {exc}")
-
-    async def attach_document(self, project_id: str, document_id: str) -> ResponseStatus:
-        try:
-            async for session in self._get_db().get_session():
-                link_repo = LinkRepository(session)
-                link = await link_repo.link_document_to_project(project_id, document_id)
-                if isinstance(link, ResponseStatus):
-                    return link
-                return OK(message="Document linked", data={"project_id": project_id, "document_id": document_id})
-        except Exception as exc:
-            return InternalError(message=f"Failed to link document: {exc}")
-
-    async def detach_document(self, project_id: str, document_id: str) -> ResponseStatus:
-        try:
-            async for session in self._get_db().get_session():
-                link_repo = LinkRepository(session)
-                removed = await link_repo.unlink_document_from_project(project_id, document_id)
-                if not removed:
-                    return NotFound(message="Link not found", error_code="4004")
-                return OK(message="Document unlinked")
-        except Exception as exc:
-            return InternalError(message=f"Failed to unlink document: {exc}")
 
 
 project_service = ProjectService()

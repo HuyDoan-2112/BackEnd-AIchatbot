@@ -21,8 +21,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String, nullable=True)
     model_label = Column(String, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -31,17 +30,11 @@ class Conversation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    company = relationship("Company", back_populates="conversations")
     project = relationship("Project", back_populates="conversations")
     creator = relationship("User", foreign_keys=[created_by])
     preset = relationship("AssistantPreset", back_populates="conversations")
     participants = relationship(
         "ConversationParticipant",
-        back_populates="conversation",
-        cascade="all, delete-orphan",
-    )
-    project_links = relationship(
-        "ProjectConversation",
         back_populates="conversation",
         cascade="all, delete-orphan",
     )

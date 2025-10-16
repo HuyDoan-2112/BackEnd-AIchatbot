@@ -9,10 +9,11 @@ from sqlalchemy import (
     Text,
     Integer,
     Float,
+    JSON,
     CheckConstraint,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -43,6 +44,13 @@ class Message(Base):
     model_label = Column(String, nullable=True)
     temperature = Column(Float, nullable=True)
     top_p = Column(Float, nullable=True)
+    
+    # Vector embedding for semantic search across conversation history
+    vector_embedding = Column(ARRAY(Float), nullable=True)
+    
+    # Tool calls stored as JSON (replaces separate ToolCall model for simplicity)
+    tool_calls_json = Column(JSON, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     conversation = relationship("Conversation", back_populates="messages")
@@ -52,7 +60,6 @@ class Message(Base):
 
     revisions = relationship("MessageRevision", back_populates="message", cascade="all, delete-orphan")
     stream_chunks = relationship("MessageStreamChunk", back_populates="message", cascade="all, delete-orphan")
-    tool_calls = relationship("ToolCall", back_populates="message", cascade="all, delete-orphan")
     citations = relationship("MessageCitation", back_populates="message", cascade="all, delete-orphan")
     attachments = relationship("MessageAttachment", back_populates="message", cascade="all, delete-orphan")
     usage = relationship("MessageUsage", back_populates="message", uselist=False, cascade="all, delete-orphan")

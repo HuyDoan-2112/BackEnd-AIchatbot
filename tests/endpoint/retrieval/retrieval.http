@@ -1,0 +1,187 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### PREREQUISITE: Setup with Documents
+### ============================================
+
+### Signup User
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "retrieval_user{{$timestamp}}",
+  "email": "retrievaluser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Company
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Retrieval Company {{$timestamp}}",
+  "description": "Company for RAG (Retrieval-Augmented Generation) testing",
+  "location": "Portland, OR"
+}
+
+### Create Project
+# @name create_project
+POST {{base}}/projects
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "RAG Project {{$timestamp}}",
+  "description": "Project for retrieval and augmented generation",
+  "company_id": "{{create_company.response.body.$.data.id}}"
+}
+
+### Upload Sample Document 1
+# @name upload_doc1
+POST {{base}}/documents/upload
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "filename": "machine_learning_guide.txt",
+  "content_type": "text/plain",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "company_id": "{{create_company.response.body.$.data.id}}",
+  "file_size": 2048,
+  "tags": ["ml", "guide", "tutorial"],
+  "content": "Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without being explicitly programmed. It focuses on developing algorithms that can access data and use it to learn for themselves."
+}
+
+### Upload Sample Document 2
+# @name upload_doc2
+POST {{base}}/documents/upload
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "filename": "deep_learning_overview.txt",
+  "content_type": "text/plain",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "company_id": "{{create_company.response.body.$.data.id}}",
+  "file_size": 1536,
+  "tags": ["deep_learning", "neural_networks", "ai"],
+  "content": "Deep learning is a subset of machine learning that uses artificial neural networks with multiple layers (hence 'deep'). These networks attempt to simulate the behavior of biological neurons, allowing the machine to learn from large amounts of data."
+}
+
+### ============================================
+### DOCUMENT RETRIEVAL / SEARCH
+### ============================================
+
+### Search Documents (Basic Retrieval)
+# @name search_documents
+POST {{base}}/retrieval
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "query": "machine learning algorithms",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "top_k": 5
+}
+
+### Search with Filters
+# @name search_documents_filtered
+POST {{base}}/retrieval
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "query": "neural networks",
+  "project_id": "{{create_project.response.body.$.data.id}}",
+  "top_k": 10,
+  "filter": {
+    "tags": ["neural_networks"]
+  }
+}
+
+### ============================================
+### ADVANCED: RAG + Chat (Query Documents)
+### ============================================
+
+### Query with Document Context
+# @name rag_chat_query
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant. Use the provided documents to answer questions accurately."
+    },
+    {
+      "role": "user",
+      "content": "Based on the documents, what is the difference between machine learning and deep learning?"
+    }
+  ],
+  "temperature": 0.5,
+  "max_tokens": 300,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "use_retrieval": true,
+    "retrieval_top_k": 3,
+    "conversation_title": "ML vs DL Q&A"
+  }
+}
+
+### ============================================
+### DOCUMENT MANAGEMENT
+### ============================================
+
+### Get Document Details
+# @name get_document
+GET {{base}}/documents/{{upload_doc1.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### List Documents in Project
+# @name list_documents
+GET {{base}}/documents?project_id={{create_project.response.body.$.data.id}}&limit=20
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Update Document Metadata
+# @name update_document
+PUT {{base}}/documents/{{upload_doc1.response.body.$.data.id}}
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "filename": "machine_learning_comprehensive_guide.txt",
+  "tags": ["ml", "guide", "tutorial", "comprehensive", "updated"]
+}
+
+### ============================================
+### CLEANUP (Optional)
+### ============================================
+
+### Delete Document 1
+# @name delete_doc1
+DELETE {{base}}/documents/{{upload_doc1.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Document 2
+# @name delete_doc2
+DELETE {{base}}/documents/{{upload_doc2.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Project
+# @name delete_project
+DELETE {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import httpx
 from typing import Any, Dict, List, Optional
 
 from app.core.config import Settings
@@ -26,6 +26,59 @@ class ModelRegistry:
 
     async def initialize(self) -> None:
         """Register built-in chat/embedding models from configuration."""
+        base_url = self.settings.MODEL_BASE_URL or "http://localhost:1234/v1"
+        
+        # Fecth the list of modesl from server local
+        try: 
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{base_url}/models")
+                resp.raise_for_status()
+                models_data = resp.json().get("data", [])
+                
+        except Exception as e:
+            models_data = []
+            
+            
+        # Take every model from the list
+        for m in models_data:
+            model_id = m.get('id')
+            if not model_id:
+                continue
+            self.register_chat_model(
+                model_id=model_id,
+                config={
+                    "model": model_id,
+                    "model_provider": "local",
+                    "base_url": base_url, 
+                    "api_key": self.settings.OPENAI_API_KEY,
+                    "temperature": self.settings.MODEL_TEMPERATURE,
+                "max_tokens": self.settings.MODEL_MAX_OUTPUT_TOKENS,
+                },
+                metadata={
+                "provider": "local",
+                "owned_by": m.get("owned_by", "organization_owner"),
+                "context_window": self.settings.MODEL_CONTEXT_WINDOW,
+                "completion_reserve": self.settings.MODEL_COMPLETION_RESERVE,
+            },
+            )
+        
+        # If fetch fails, take the default one.
+        if self._default_embedding_model:
+            self.register_embedding_model(
+                model_id = self._default_embedding_model,
+                config= {
+                    "model": self._default_embedding_model,
+                    "base_url": self.settings.EMBEDDING_BASE_URL or base_url,
+                    "api_key": self.settings.OPENAI_API_KEY,
+                }, metadata={
+                    "provider": self.settings.EMBEDDING_PROVIDER,
+                    "owned_by": self.settings.EMBEDDING_OWNED_BY,
+                }
+            )
+        
+        
+        self._initialized = True
+        
         self.register_chat_model(
             model_id=self._default_chat_model,
             config={
@@ -141,11 +194,19 @@ class ModelRegistry:
         return self._initialized
 
 
-model_registry: Optional[ModelRegistry] = None
+# Module-level singleton storage for the model registry
+_model_registry: Optional[ModelRegistry] = None
 
+# Backwards-compat alias if any code referenced the old name
+model_registry = _model_registry
+
+def init_model_registry(settings: Settings) -> ModelRegistry:
+    global _model_registry
+    if _model_registry is None:
+        _model_registry = ModelRegistry(settings)
+    return _model_registry
 
 def get_model_registry() -> ModelRegistry:
-    if model_registry is None:
+    if _model_registry is None:
         raise RuntimeError("Model registry has not been initialized yet")
-    return model_registry
-
+    return _model_registry

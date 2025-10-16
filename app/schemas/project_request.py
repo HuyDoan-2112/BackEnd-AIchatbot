@@ -38,16 +38,27 @@ MAX_TOTAL_SIZE = 80 * 1024 * 1024
 
 class ProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    company_id: uuid.UUID
+    organization_id: uuid.UUID
     name: str = Field(min_length=1, max_length=100, default="New Project")
     description: Optional[str] = Field(default=None, max_length=500)
+    
+    # RAG Configuration
+    rag_enabled: bool = Field(default=True)
+    rag_vector_store_id: Optional[str] = None
+    rag_chunk_size: int = Field(default=1000, ge=100, le=5000)
+    rag_chunk_overlap: int = Field(default=200, ge=0, le=1000)
+    rag_config: Optional[dict] = None
+    
+    # Project Settings
+    rules: Optional[dict] = None
+    default_model: str = Field(default="gpt-4")
+    system_prompt: Optional[str] = Field(default=None, max_length=2000)
+    
     start_date: Optional[datetime] = Field(default=None)
     end_date: Optional[datetime] = Field(default=None)
     is_public: bool = Field(default=False)
     files: List[UploadFile] = Field(default_factory=list)
     member_ids: List[uuid.UUID] = Field(default_factory=list)
-    conversation_ids: List[uuid.UUID] = Field(default_factory=list)
-    document_ids: List[uuid.UUID] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -117,5 +128,13 @@ class ProjectUpdateRequest(BaseModel):
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)
+    rag_enabled: Optional[bool] = None
+    rag_vector_store_id: Optional[str] = None
+    rag_chunk_size: Optional[int] = Field(default=None, ge=100, le=5000)
+    rag_chunk_overlap: Optional[int] = Field(default=None, ge=0, le=1000)
+    rag_config: Optional[dict] = None
+    rules: Optional[dict] = None
+    default_model: Optional[str] = None
+    system_prompt: Optional[str] = Field(default=None, max_length=2000)
     start_date: Optional[datetime] = Field(default=None)
     end_date: Optional[datetime] = Field(default=None)

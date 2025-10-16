@@ -1,35 +1,218 @@
-@token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlYzEwNzhlYy05NDJmLTRiMGUtOGQ5Zi04MGQ2ZTU0ZDM5ZjMiLCJleHAiOjE3NjA1MDkyNDh9.AGeg0dBFuWZULzYK3J9T-qKZ_ofRaLoUYfDwClr6p-4
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
 
-###
-POST http://localhost:8000/api/v1/chat/completions
+### ============================================
+### PREREQUISITE: Setup
+### ============================================
+
+### Signup User
+# @name signup
+POST {{base}}/auth/signup
 Content-Type: application/json
-Authorization: Bearer {{token}}
+
+{
+  "username": "chat_user{{$timestamp}}",
+  "email": "chatuser{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Company
+# @name create_company
+POST {{base}}/companies
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Chat Company {{$timestamp}}",
+  "description": "Company for chat testing",
+  "location": "Austin, TX"
+}
+
+### Create Project
+# @name create_project
+POST {{base}}/projects
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "Chat Project {{$timestamp}}",
+  "description": "Project for chat conversations",
+  "company_id": "{{create_company.response.body.$.data.id}}"
+}
+
+### ============================================
+### CHAT COMPLETIONS (Non-Streaming)
+### ============================================
+
+### Simple Chat Completion (Anonymous)
+# @name chat_simple
+POST {{base}}/chat/completions
+Content-Type: application/json
 
 {
   "model": "openai/gpt-oss-20b",
   "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "Hello!"},
-    {"role": "user", "content": "Can you tell me a joke?"}
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "What is 2+2?"
+    }
   ],
-  "max_tokens": 100,
   "temperature": 0.7,
-  "top_p": 0.9,
-  "n": 1,
-  "stream": false
+  "max_tokens": 100
 }
 
-###
-# List my conversations (requires Auth)
-GET http://localhost:8000/api/v1/chat/conversations?limit=20
-Authorization: Bearer {{token}}
+### Chat Completion (Authenticated)
+# @name chat_authenticated
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
 
-###
-# Get single conversation (replace with a valid conversation_id)
-GET http://localhost:8000/api/v1/chat/conversations/{{conversation_id}}
-Authorization: Bearer {{token}}
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant specialized in explaining concepts."
+    },
+    {
+      "role": "user",
+      "content": "Explain machine learning in simple terms"
+    }
+  ],
+  "temperature": 0.5,
+  "max_tokens": 200,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "conversation_title": "ML Basics Discussion"
+  }
+}
 
-###
-# List messages in a conversation (replace with a valid conversation_id)
-GET http://localhost:8000/api/v1/chat/conversations/{{conversation_id}}/messages?limit=50&include_usage=true
-Authorization: Bearer {{token}}
+### Chat Completion with History (Authenticated)
+# @name chat_with_history
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant. Remember the context from previous messages."
+    },
+    {
+      "role": "user",
+      "content": "My name is John and I work in data science"
+    },
+    {
+      "role": "assistant",
+      "content": "Nice to meet you, John! Data science is a fascinating field. You work with data to extract insights and build models. What aspect of data science are you most interested in?"
+    },
+    {
+      "role": "user",
+      "content": "What are some best practices for my field?"
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 300,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "conversation_title": "Data Science Best Practices"
+  }
+}
+
+### ============================================
+### CHAT WITH STREAMING (SSE)
+### ============================================
+
+### Streaming Chat Completion (Authenticated)
+# @name chat_stream
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a short poem about artificial intelligence"
+    }
+  ],
+  "temperature": 0.8,
+  "max_tokens": 200,
+  "stream": true,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "conversation_title": "AI Poetry"
+  }
+}
+
+### ============================================
+### CHAT HISTORY & MANAGEMENT
+### ============================================
+
+### Get Chat History (List Conversations)
+# @name list_conversations
+GET {{base}}/chat/conversations?project_id={{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Get Conversation Messages
+# @name get_conversation_messages
+GET {{base}}/chat/conversations/{{chat_authenticated.response.body.$.data.conversation_id}}/messages
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### ============================================
+### ADVANCED: RAG + CHAT Integration
+### ============================================
+
+### Chat with Document Context (RAG)
+# @name chat_with_rag
+POST {{base}}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "model": "openai/gpt-oss-20b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant. Use the provided documents to answer questions."
+    },
+    {
+      "role": "user",
+      "content": "Based on our documents, what are the key findings?"
+    }
+  ],
+  "temperature": 0.5,
+  "max_tokens": 500,
+  "metadata": {
+    "company_id": "{{create_company.response.body.$.data.id}}",
+    "project_id": "{{create_project.response.body.$.data.id}}",
+    "use_retrieval": true,
+    "retrieval_top_k": 3,
+    "conversation_title": "Document Q&A"
+  }
+}
+
+### ============================================
+### CLEANUP (Optional)
+### ============================================
+
+### Delete Project
+# @name delete_project
+DELETE {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Company
+# @name delete_company
+DELETE {{base}}/companies/{{create_company.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

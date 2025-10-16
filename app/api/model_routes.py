@@ -80,6 +80,8 @@ async def retrieve_model(model_id: str):
     ```
     """
     # Find model in default list
+    from app.core.model_registry import get_model_registry
+    registry = get_model_registry()
     available = registry.list_chat_models()
     model_data = next((m for m in available if m["id"] == model_id), None)
 

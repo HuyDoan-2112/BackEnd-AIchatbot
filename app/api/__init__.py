@@ -1,6 +1,6 @@
 from . import auth_routes
 from . import chat_routes
-from . import company_routes
+from . import organization_routes
 from . import assistant_preset_routes
 from . import embedding_routes
 from . import mcp_routes
@@ -13,7 +13,7 @@ from . import user_routes
 __all__ = [
     "auth_routes",
     "chat_routes",
-    "company_routes",
+    "organization_routes",
     "assistant_preset_routes",
     "embedding_routes",
     "mcp_routes",

@@ -1,0 +1,128 @@
+@base = http://localhost:8000/api/v1
+@timestamp = {{$timestamp}}
+
+### ============================================
+### SETUP: AUTH + ORGANIZATION
+### ============================================
+
+### Signup - creates a fresh user for this flow
+# @name signup
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{
+  "username": "project_tester{{$timestamp}}",
+  "email": "project_tester{{$timestamp}}@example.com",
+  "password": "TestPassword123!",
+  "confirm_password": "TestPassword123!"
+}
+
+### Create Organization (required for project ownership)
+# @name create_organization
+POST {{base}}/organizations
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "name": "QA-Org-{{$timestamp}}",
+  "type": "company",
+  "description": "Organization created for project endpoint regression tests",
+  "location": "Remote"
+}
+
+### Fetch Organization Details
+# @name get_organization
+GET {{base}}/organizations/{{create_organization.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### ============================================
+### PROJECT MANAGEMENT (CRUD + RELATIONS)
+### ============================================
+
+### Create Project with RAG configuration
+# @name create_project
+POST {{base}}/projects
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "organization_id": "{{create_organization.response.body.$.data.id}}",
+  "name": "AI_Project_{{$timestamp}}",
+  "description": "End-to-end project scenario for integration tests",
+  "rag_enabled": true,
+  "rag_vector_store_id": "vs_demo_{{$timestamp}}",
+  "rag_chunk_size": 768,
+  "rag_chunk_overlap": 128,
+  "rag_config": {
+    "retriever": {
+      "top_k": 4
+    },
+    "chunking": {
+      "strategy": "semantic",
+      "overlap": 0.2
+    }
+  },
+  "rules": {
+    "temperature": 0.4,
+    "max_tokens": 512
+  },
+  "default_model": "gpt-4",
+  "system_prompt": "You are the primary assistant for the QA project.",
+  "is_public": false,
+  "member_ids": []
+}
+
+### Get Project Details (includes relations by default)
+# @name get_project
+GET {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### List Projects filtered by organization
+# @name list_projects_by_org
+GET {{base}}/projects?organization_id={{create_organization.response.body.$.data.id}}&limit=5&include_relations=true
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Update Project metadata and RAG settings
+# @name update_project
+PUT {{base}}/projects/{{create_project.response.body.$.data.id}}
+Content-Type: application/json
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+{
+  "description": "Updated description highlighting recent test adjustments",
+  "rag_enabled": false,
+  "rag_config": {
+    "retriever": {
+      "top_k": 8
+    }
+  },
+  "rules": {
+    "temperature": 0.2
+  },
+  "default_model": "gpt-4o-mini",
+  "system_prompt": "Keep responses concise for QA verification."
+}
+
+### Get Project Conversations (should be empty for a new project)
+# @name get_project_conversations
+GET {{base}}/projects/{{create_project.response.body.$.data.id}}/conversations
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Get Project Documents (validate relationship endpoint)
+# @name get_project_documents
+GET {{base}}/projects/{{create_project.response.body.$.data.id}}/documents
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### ============================================
+### CLEANUP (OPTIONAL)
+### ============================================
+
+### Delete Project
+# @name delete_project
+DELETE {{base}}/projects/{{create_project.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}
+
+### Delete Organization
+# @name delete_organization
+DELETE {{base}}/organizations/{{create_organization.response.body.$.data.id}}
+Authorization: Bearer {{signup.response.body.$.data.access_token}}

@@ -10,7 +10,7 @@ from langchain_openai import OpenAIEmbeddings
 from app.api import routes
 from app.core.config import get_settings
 from app.db import postgresql
-from app.core import model_registry as model_registry_module
+from app.core.model_registry import init_model_registry, get_model_registry
 from app.services.cache_service import get_cache_service
 from app.middleware import LoggingMiddleware
 from app.core.logger import get_logger
@@ -46,8 +46,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize model registry
     try:
-        model_registry_module.model_registry = model_registry_module.ModelRegistry(settings)
-        await model_registry_module.model_registry.initialize()
+        registry = init_model_registry(settings)
+        await registry.initialize()
+        models = registry.list_chat_models()
+        logger.info(f"Loaded {len(models)} models: {[m['id'] for m in models]}")
         logger.info(f"Model registry initialized with model: {settings.MODEL_NAME}")
         print(f"✓ Model registry initialized with model: {settings.MODEL_NAME}")
     except Exception as e:
@@ -98,7 +100,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error disconnecting cache service: {e}", exc_info=True)
 
     try:
-        await model_registry_module.model_registry.shutdown()
+        registry = get_model_registry()
+        await registry.shutdown()
         logger.info("Model registry shut down")
     except Exception as e:
         logger.error(f"Error shutting down model registry: {e}", exc_info=True)

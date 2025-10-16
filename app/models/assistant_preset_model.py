@@ -14,7 +14,7 @@ class AssistantPreset(Base):
     __tablename__ = "assistant_presets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
     system_prompt = Column(String, nullable=True)
@@ -25,7 +25,7 @@ class AssistantPreset(Base):
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    company = relationship("Company", back_populates="assistant_presets")
+    organization = relationship("Organization", back_populates="assistant_presets")
     project = relationship("Project", back_populates="assistant_presets")
     creator = relationship("User", back_populates="assistant_presets")
     conversations = relationship("Conversation", back_populates="preset")
